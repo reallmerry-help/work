@@ -1,0 +1,2343 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Loader2, Camera, Check, X, 
+  Send, Search, MoreVertical, Phone, Video, Paperclip, 
+  Settings, LogOut, ChevronLeft, File as FileIcon, 
+  Trash2, Copy, CornerUpLeft, Pin, CheckSquare, Edit2, 
+  Smile, Ban, UserX, Bell, BellOff, Eraser, Users, Megaphone,
+    Play, Pause, Eye, BadgeCheck, Mic, BookOpen, Ghost, Archive,
+  Search as SearchIcon, UserPlus, Flag, MessageSquare, Gift, Calendar, Menu
+} from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
+
+import CallRoom from './components/CallRoom';
+import MessageBubble from './components/MessageBubble';
+import ImageCropperModal from './components/ImageCropperModal';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
+const DEFAULT_AVATAR = "https://api.dicebear.com/9.x/glass/svg?seed=ApertureDefault";
+const NOTIFICATION_SOUND = "data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABMm64UAAAgAAA0gAAABAAABCAAACe4AAA"; 
+const ADMIN_UUID = "6c15545d-75bb-459a-a7e3-02afed86bc33";
+
+type Profile = { id: string; username: string; display_name: string; avatar_url: string; public_key: string; private_key?: string; last_seen: string; bio: string; password_hash?: string; custom_status?: string; custom_status_color?: string; is_verified?: boolean; dob?: string; is_banned?: boolean; phone?: string; };
+type Room = { id: string; updated_at: string; other_user?: Profile; last_message_preview?: string; unread_count: number; pinned_message_id?: string; is_muted?: boolean; type: 'private' | 'channel' | 'group'; title?: string; slug?: string; avatar_url?: string; description?: string; owner_id?: string; invite_link?: string; is_member?: boolean; is_verified?: boolean; subscribers_count?: number; };
+type MessagePayload = { text?: string; isSystem?: boolean; isCall?: 'outgoing'|'missed'|'incoming'; file?: { url: string; type: 'image'|'video'|'audio'|'file'; name: string; size?: number; duration?: number } };
+type Reactions = { [emoji: string]: string[] }; 
+type Message = { id: string; room_id: string; sender_id: string; content: string; enc_key_recipient: string; enc_key_sender: string; created_at: string; is_read: boolean; is_deleted: boolean; is_edited: boolean; reply_to_id?: string; decoded?: MessagePayload; replyDecoded?: MessagePayload; replySender?: Profile; reactions?: Reactions; views_count?: number; violation_reason?: string; sender_profile?: Profile; };
+type Contact = { id: string; user_id: string; contact_id: string; custom_name?: string; note?: string; profile?: Profile };
+type Toast = { id: string; message: string; type: 'error' | 'success' | 'info' };
+
+const LiquidGlass = ({ children, className="", onClick }: { children: React.ReactNode, className?: string, onClick?: (e: React.MouseEvent) => void }) => (
+  <div className={"premium-glass " + className} onClick={onClick}>
+    <div className="ambient-glow-blue top-[-50px] left-[-50px]"></div>
+    <div className="ambient-glow-cyan bottom-[-50px] right-[-50px]"></div>
+    <div className="relative z-10 w-full h-full">{children}</div>
+  </div>
+);
+
+const LogoIcon = ({ className }: { className?: string }) => (
+  <motion.svg whileHover={{ rotate: 180 }} transition={{ duration: 0.5 }} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <circle cx="12" cy="12" r="10"></circle><path d="m14.31 8 5.74 9.94"></path><path d="M9.69 8h11.48"></path><path d="m7.38 12 5.74-9.94"></path><path d="M9.69 16 3.95 6.06"></path><path d="M14.31 16H2.83"></path><path d="m16.62 12-5.74 9.94"></path>
+  </motion.svg>
+);
+
+const LeaveIcon = ({ size, className }: { size?: number, className?: string }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size||24} height={size||24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M10 12h.01"></path><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"></path><path d="M2 20h20"></path></svg> );
+
+const TieBowIcon = ({className, style}:{className?:string, style?:any}) => <svg style={style} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="4" height="4" x="10" y="7"></rect><path d="M8 9h2"></path><path d="M10 7C8.8 5.5 6.6 4 4 4 2.9 4 2 6.2 2 9s.9 5 2 5c2.6 0 4.8-1.5 6-3"></path><path d="M14 9h2"></path><path d="M14 11c1.2 1.5 3.4 3 6 3 1.1 0 2-2.2 2-5s-.9-5-2-5c-2.6 0-4.8 1.5-6 3"></path><path d="M5.5 13.83 4 20l3-1 2 2 2.5-10"></path><path d="M18.5 13.83 20 20l-3-1-2 2-2.5-10"></path></svg>;
+const TreePineIcon = ({className, style}:{className?:string, style?:any}) => <svg style={style} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m17 14 3 3.3a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14h-.3a1 1 0 0 1-.7-1.7L9 9h-.2A1 1 0 0 1 8 7.3L12 3l4 4.3a1 1 0 0 1-.8 1.7H15l3 3.3a1 1 0 0 1-.7 1.7H17Z"></path><path d="M12 22v-3"></path></svg>;
+const UfoIcon = ({className, style}:{className?:string, style?:any}) => <svg style={style} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 8c0 1-3 2-6 2S6 9 6 8a6 6 0 0 1 12 0"></path><path d="M7 13h.01"></path><path d="M12 14h.01"></path><path d="M17 13h.01"></path><path d="M6 8.1c-2.4 1-4 2.6-4 4.4 0 3 4.5 5.5 10 5.5s10-2.5 10-5.5c0-1.8-1.6-3.4-4-4.4"></path><path d="m7 22 2-4"></path><path d="m17 22-2-4"></path></svg>;
+const WhaleIcon = ({className, style}:{className?:string, style?:any}) => <svg style={style} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 9.1V5a2 2 0 0 0-4 0"></path><path d="M18 5a2 2 0 0 1 4 0"></path><path d="M6 9.7 3.9 8.4C2.7 7.7 2 6.4 2 5V3c2 0 4 2 4 2s2-2 4-2v2c0 1.4-.7 2.7-1.9 3.4l-3.8 2.4A5 5 0 0 0 7 20h12c1.7 0 3-1.3 3-3v-3c0-2.8-2.2-5-5-5-2.7 0-5.1 1.4-6.4 3.6L9.7 14A2 2 0 0 1 6 13Z"></path><path d="M15 15h.01"></path></svg>;
+const CatIcon = ({className, style}:{className?:string, style?:any}) => <svg style={style} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"></path><path d="M8 14v.5"></path><path d="M16 14v.5"></path><path d="M11.25 16.25h1.5L12 17l-.75-.75Z"></path></svg>;
+const STATUS_ICONS: Record<string, React.FC<any>> = { 'tie': TieBowIcon, 'tree': TreePineIcon, 'ufo': UfoIcon, 'whale': WhaleIcon, 'cat': CatIcon };
+
+const StatusBadge = ({ status, color, size = 16, className = "" }: { status?: string, color?: string, size?: number, className?: string }) => {
+  if (!status || !STATUS_ICONS[status]) return null;
+  const Icon = STATUS_ICONS[status];
+  return <Icon className={"inline-block flex-shrink-0 " + className} style={{ color: color || '#3b82f6', width: size, height: size }}></Icon>;
+};
+
+const VerifiedBadge = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <BadgeCheck size={size} className={"text-blue-500 flex-shrink-0 " + className} fill="currentColor" stroke="white" strokeWidth={2}></BadgeCheck>
+);
+
+const ProfileAvatar = ({ prof, className = "" }: { prof?: Profile, className?: string }) => {
+    if (prof?.is_banned) return <div className={`flex items-center justify-center bg-zinc-900 border border-white/5 text-zinc-600 rounded-full ${className}`}><Ghost size={className.includes('w-28') ? 40 : 16} /></div>;
+    return <img src={prof?.avatar_url || DEFAULT_AVATAR} className={`object-cover rounded-full ${className}`} />;
+};
+
+function formatDuration(sec: number) { const m = Math.floor(sec/60); const s = Math.floor(sec%60); return `${m}:${s<10?'0':''}${s}`; }
+function formatBytes(bytes?: number, decimals = 1) {
+    if (!bytes) return '0 KB';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+const AudioPlayer = ({ src, isMe, name, size }: { src: string, isMe: boolean, name?: string, size?: number }) => {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const togglePlay = () => { if (!audioRef.current) return; if (playing) audioRef.current.pause(); else audioRef.current.play(); setPlaying(!playing); };
+  const isVoice = name === "Голосовое сообщение" || !name;
+
+  if (!isVoice) {
+      return (
+        <div className="flex items-center gap-3 p-2 min-w-[280px] rounded-2xl bg-black/20 text-white border border-white/5 shadow-inner">
+          <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex-shrink-0 flex items-center justify-center overflow-hidden shadow-md cursor-pointer group" onClick={togglePlay}>
+              <svg className="w-6 h-6 text-white/50" fill="currentColor" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-2c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-2"/></svg>
+              <div className={"absolute inset-0 flex items-center justify-center bg-black/40 transition-opacity " + (playing ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+                  {playing ? <Pause size={20} fill="white" className="text-white"></Pause> : <Play size={20} fill="white" className="text-white ml-1"></Play>}
+              </div>
+          </div>
+          <div className="flex-1 flex flex-col justify-center min-w-0 pr-3">
+              <div className="font-bold text-[14px] truncate leading-tight text-white">{name}</div>
+              <div className="flex items-center gap-1.5 text-[12px] text-white/70 font-medium mt-0.5 font-mono">
+                  <span>{formatDuration(duration)}</span>
+                  <span className="text-[8px] opacity-50">•</span>
+                  <span>{formatBytes(size)}</span>
+              </div>
+          </div>
+          <audio ref={audioRef} src={src} onLoadedMetadata={(e)=>setDuration(e.currentTarget.duration)} onEnded={()=>{setPlaying(false); setProgress(0);}} onTimeUpdate={(e)=>setProgress((e.currentTarget.currentTime/e.currentTarget.duration)*100)} className="hidden"></audio>
+        </div>
+      );
+  }
+
+  return (
+    <div className="flex items-center gap-3 p-2 min-w-[250px] text-white">
+      <button onClick={togglePlay} className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 transition-transform hover:scale-105 shadow-md bg-blue-500 text-white border border-white/10">
+          {playing ? <Pause size={20} fill="currentColor"></Pause> : <Play size={20} fill="currentColor" className="ml-1"></Play>}
+      </button>
+      <div className="flex-1 flex flex-col justify-center gap-1.5">
+        <div className="relative h-4 w-full flex items-center cursor-pointer" onClick={(e) => { if(audioRef.current && duration){ const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * duration; } }}>
+          <div className="absolute inset-0 flex items-center gap-[2px] opacity-30">
+              {[...Array(20)].map((_, i) => <div key={i} className="w-1 rounded-full bg-white" style={{height: `${Math.max(20, Math.random() * 100)}%`}}></div>)}
+          </div>
+          <div className="absolute left-0 top-0 bottom-0 overflow-hidden flex items-center gap-[2px] transition-all duration-100" style={{width: `${progress}%`}}>
+              {[...Array(20)].map((_, i) => <div key={i} className="w-1 rounded-full bg-blue-400 shadow-[0_0_5px_rgba(96,165,250,0.8)]" style={{height: `${Math.max(20, Math.random() * 100)}%`}}></div>)}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-white/70 font-mono font-medium">
+            <span>{formatDuration(duration)}</span>
+            <span className="text-[8px] opacity-50">•</span>
+            <span>{formatBytes(size)}</span>
+            {!playing && progress === 0 && <div className="w-1.5 h-1.5 bg-blue-400 rounded-full ml-auto shadow-[0_0_5px_rgba(96,165,250,0.8)]"></div>}
+        </div>
+      </div>
+      <audio ref={audioRef} src={src} onLoadedMetadata={(e)=>setDuration(e.currentTarget.duration)} onEnded={()=>{setPlaying(false); setProgress(0);}} onTimeUpdate={(e)=>setProgress((e.currentTarget.currentTime/e.currentTarget.duration)*100)} className="hidden"></audio>
+    </div>
+  );
+};
+
+async function generateKeyPair() {
+  const keys = await window.crypto.subtle.generateKey({ name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["encrypt", "decrypt"]);
+  const pubParams = await window.crypto.subtle.exportKey("spki", keys.publicKey);
+  const privParams = await window.crypto.subtle.exportKey("pkcs8", keys.privateKey);
+  const privB64 = btoa(String.fromCharCode(...new Uint8Array(privParams)));
+  const pubB64 = btoa(String.fromCharCode(...new Uint8Array(pubParams)));
+  return { pubB64, privB64 };
+}
+
+async function encryptMessage(payload: any, recipientPubKey: string, myPubKey: string) {
+  try {
+    if (!recipientPubKey) return { content: btoa(encodeURIComponent(JSON.stringify(payload))), keyRec: "", keySend: "" }; 
+    const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encContent = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, sessionKey, new TextEncoder().encode(JSON.stringify(payload)));
+    const contentBytes = new Uint8Array(iv.length + encContent.byteLength);
+    contentBytes.set(iv);
+    contentBytes.set(new Uint8Array(encContent), iv.length);
+    const contentB64 = btoa(String.fromCharCode(...contentBytes));
+    const wrap = async (pubB64: string) => {
+        const pub = await window.crypto.subtle.importKey("spki", Uint8Array.from(atob(pubB64), c=>c.charCodeAt(0)), {name:"RSA-OAEP", hash:"SHA-256"}, false, ["encrypt"]);
+        const rawKey = await window.crypto.subtle.exportKey("raw", sessionKey);
+        return btoa(String.fromCharCode(...new Uint8Array(await window.crypto.subtle.encrypt({name:"RSA-OAEP"}, pub, rawKey))));
+    };
+    return { content: contentB64, keyRec: await wrap(recipientPubKey), keySend: await wrap(myPubKey) };
+  } catch (e) { return null; }
+}
+
+async function decryptMessage(contentB64: string, keyB64: string) {
+  try {
+    if (!contentB64) return null;
+    if (!keyB64) return JSON.parse(decodeURIComponent(atob(contentB64))); 
+    const privB64 = localStorage.getItem("aperture_private_key");
+    if (!privB64) return null;
+    const privKey = await window.crypto.subtle.importKey("pkcs8", Uint8Array.from(atob(privB64), c=>c.charCodeAt(0)), {name:"RSA-OAEP", hash:"SHA-256"}, false, ["decrypt"]);
+    const rawSessionKey = await window.crypto.subtle.decrypt({name:"RSA-OAEP"}, privKey, Uint8Array.from(atob(keyB64), c=>c.charCodeAt(0)));
+    const sessionKey = await window.crypto.subtle.importKey("raw", rawSessionKey, {name:"AES-GCM"}, false, ["decrypt"]);
+    const combined = Uint8Array.from(atob(contentB64), c=>c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    const dec = await window.crypto.subtle.decrypt({name:"AES-GCM", iv:iv}, sessionKey, data);
+    return JSON.parse(new TextDecoder().decode(dec));
+  } catch (e) { return null; }
+}
+
+function formatLastSeen(d?: string){ if(!d)return""; const m=(new Date().getTime()-new Date(d).getTime())/6e4; if(m<3)return"online"; if(m<60)return`был ${Math.floor(m)} мин. назад`; return`был ${new Date(d).toLocaleDateString()}` }
+function formatDateHeader(d:string){ const D=new Date(d),t=new Date;if(D.toDateString()===t.toDateString())return"Сегодня"; t.setDate(t.getDate()-1); if(D.toDateString()===t.toDateString())return"Вчера"; return D.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}
+function playNotification(){ const a=new Audio(NOTIFICATION_SOUND); a.play().catch(()=>{}); }
+function generatePassword(){ return Math.random().toString(36).slice(-8).toUpperCase(); }
+
+const REACTION_EMOJIS = ["❤️", "👍", "👎", "😂", "🔥", "🥰", "👏", "🤔"];
+function calculateAge(dob: string) {
+    if (!dob) return 0;
+    const birthDate = new Date(dob);
+    const ageDate = new Date(Date.now() - birthDate.getTime());
+    return Math.abs(ageDate.getUTCFullYear() - 1970);
+}
+
+function formatDob(dob?: string) {
+    if (!dob) return "";
+    const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const d = new Date(dob);
+    if (isNaN(d.getTime())) return "";
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} (${calculateAge(dob)} лет)`;
+}
+
+const ToastItem = ({ id, message, type, onClose }: { id: string, message: string, type: 'error'|'success'|'info', onClose: (id: string)=>void }) => {
+    useEffect(() => {
+        const timer = setTimeout(() => onClose(id), 4000);
+        return () => clearTimeout(timer);
+    }, [id, onClose]);
+
+    return (
+        <motion.div initial={{ x: 100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 100, opacity: 0 }} className="relative bg-[#1a1a1a] border border-white/10 p-4 rounded-xl shadow-2xl flex items-center gap-3 overflow-hidden min-w-[280px]">
+            {type === 'error' ? <X className="text-red-500 bg-red-500/20 p-1 rounded-full flex-shrink-0" size={24} /> : type === 'success' ? <Check className="text-green-500 bg-green-500/20 p-1 rounded-full flex-shrink-0" size={24} /> : <Bell className="text-blue-500 bg-blue-500/20 p-1 rounded-full flex-shrink-0" size={24} />}
+            <div className="text-sm font-medium text-white flex-1">{message}</div>
+            <button onClick={() => onClose(id)} className="text-zinc-500 hover:text-white transition-colors"><X size={16}/></button>
+            <motion.div initial={{ width: '100%' }} animate={{ width: 0 }} transition={{ duration: 4, ease: 'linear' }} className={`absolute bottom-0 left-0 h-1 ${type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`} />
+        </motion.div>
+    );
+};
+
+const MoscowCityIllustration = () => (
+    <div className="absolute inset-0 z-0 flex items-end justify-center pointer-events-none opacity-40 mix-blend-screen">
+      <svg width="100%" height="80%" viewBox="0 0 800 600" preserveAspectRatio="xMidYMax slice">
+        <defs>
+          <linearGradient id="b1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6"></stop><stop offset="100%" stopColor="#000000"></stop></linearGradient>
+          <linearGradient id="b2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0ea5e9"></stop><stop offset="100%" stopColor="#000000"></stop></linearGradient>
+          <linearGradient id="b3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0284c7"></stop><stop offset="100%" stopColor="#000000"></stop></linearGradient>
+        </defs>
+        <path d="M 250 600 Q 270 450 250 300 Q 230 150 260 100 L 290 100 Q 320 150 300 300 Q 280 450 300 600 Z" fill="url(#b1)"></path>
+        <polygon points="350,600 350,250 370,250 370,180 390,180 390,120 410,120 410,180 430,180 430,250 450,250 450,600" fill="url(#b3)"></polygon>
+        <path d="M 480 600 L 480 80 Q 510 60 540 80 L 540 600 Z" fill="url(#b2)"></path>
+        <polygon points="650,600 665,250 670,250 670,50 672,10 674,50 674,250 679,250 690,600" fill="url(#b1)"></polygon>
+        <rect x="500" y="150" width="4" height="4" fill="#fff" className="star"></rect>
+        <rect x="520" y="200" width="4" height="4" fill="#fff" className="star"></rect>
+        <rect x="380" y="150" width="4" height="4" fill="#fff" className="star"></rect>
+        <rect x="270" y="250" width="4" height="4" fill="#fff" className="star"></rect>
+      </svg>
+    </div>
+);
+
+const AuthLayout = ({ children, hideRight = false }: { children: React.ReactNode, hideRight?: boolean }) => (
+    <div className="flex h-screen bg-[#050505] text-white overflow-hidden font-sans">
+      <div className={"w-full " + (hideRight ? '' : 'md:w-1/2') + " flex items-center justify-center p-8 relative z-10"}>
+          <div className="absolute inset-0 bg-blue-900/10 blur-[100px] pointer-events-none rounded-full w-[400px] h-[400px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+          {children}
+      </div>
+      {!hideRight && (
+        <div className="hidden md:flex w-1/2 relative bg-[#050a15] items-center justify-center overflow-hidden border-l border-white/5">
+            <MoscowCityIllustration />
+            <div className="absolute inset-0 bg-[url('https://transparenttextures.com/patterns/stardust.png')] opacity-30 mix-blend-overlay"></div>
+            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 1 }} className="z-10 text-center animate-float">
+                <h1 className="text-[120px] font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-blue-300 to-blue-600 neon-text select-none">UDMURTGRAM</h1>
+                <div className="text-blue-300/50 text-sm tracking-[0.5em] font-mono mt-[-20px] ml-2 font-bold">SECURE MESSENGER</div>
+            </motion.div>
+        </div>
+      )}
+    </div>
+);
+
+
+export default function Messenger() {
+  const [step, setStep] = useState<'auth'|'login'|'setup'|'success'|'chat'>('auth');
+  const [myProfile, setMyProfile] = useState<Profile | null>(null);
+  const myProfileRef = useRef<Profile | null>(null);
+  const activeRoomRef = useRef<Room | null>(null);
+  
+  const [loading, setLoading] = useState(false);
+  const [inviteToken, setInviteToken] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [formName, setFormName] = useState("");
+  const [formUsername, setFormUsername] = useState("");
+  const [formBio, setFormBio] = useState("");
+  const [formStatus, setFormStatus] = useState("tie");
+  const [formStatusColor, setFormStatusColor] = useState("#3b82f6");
+  const [formAvatarFile, setFormAvatarFile] = useState<File | null>(null);
+  const [formAvatarPreview, setFormAvatarPreview] = useState<string | null>(null);
+  const [formDob, setFormDob] = useState("");
+  const [userStatus, setUserStatus] = useState<'available'|'taken'|'current'|'none'>('none');
+  const [showImageCropper, setShowImageCropper] = useState(false);
+  const [cropperImageSrc, setCropperImageSrc] = useState<string>("");
+  
+  const [showChannelWizard, setShowChannelWizard] = useState(false);
+  const [channelStep, setChannelStep] = useState(1);
+  const [channelData, setChannelData] = useState({ title: '', desc: '', type: 'public' as 'public'|'private', slug: '' });
+
+  const [showGroupWizard, setShowGroupWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [createData, setCreateData] = useState({ title: '', desc: '', type: 'public' as 'public'|'private', slug: '' });
+  const [selectedUsers, setSelectedUsers] = useState<Profile[]>([]);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userSearchResults, setUserSearchResults] = useState<Profile[]>([]);
+  const [isEditingChannel, setIsEditingChannel] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  
+  const [showSettings, setShowSettings] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState<Profile | null>(null); 
+  
+  const [showContactModal, setShowContactModal] = useState<Profile | null>(null);
+  const [contactFirstName, setContactFirstName] = useState("");
+  const [contactLastName, setContactLastName] = useState("");
+  const [contactNote, setContactNote] = useState("");
+    const [contactNotificationsEnabled, setContactNotificationsEnabled] = useState(true);
+
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isCalling, setIsCalling] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<{room: Room, caller: Profile} | null>(null);
+  const globalChannelRef = useRef<any>(null);
+
+  const addToast = (message: string, type: Toast['type'] = 'info') => {
+      setToasts(prev => [...prev, { id: Math.random().toString(), message, type }]);
+  };
+
+  const renderToasts = () => (
+      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
+          <AnimatePresence>
+              {toasts.map(t => (
+                  <div key={t.id} className="pointer-events-auto">
+                      <ToastItem id={t.id} message={t.message} type={t.type} onClose={(id) => setToasts(p => p.filter(x => x.id !== id))} />
+                  </div>
+              ))}
+          </AnimatePresence>
+      </div>
+  );
+
+  const openContactModal = (prof: Profile) => {
+      const existing = contacts.find(c => c.contact_id === prof.id);
+      if (existing && existing.custom_name) {
+          const parts = existing.custom_name.split(" ");
+          setContactFirstName(parts[0] || "");
+          setContactLastName(parts.slice(1).join(" ") || "");
+      } else {
+          setContactFirstName(prof.display_name || "");
+          setContactLastName("");
+      }
+      setContactNote(existing?.note || "");
+      setShowContactModal(prof);
+      setShowProfileModal(null);
+  };
+
+  const handleSaveContact = async () => {
+      if (!myProfile || !showContactModal) return;
+      const customName = [contactFirstName, contactLastName].filter(Boolean).join(" ");
+      const existing = contacts.find(c => c.contact_id === showContactModal.id);
+
+      if (existing) {
+          const { data } = await supabase.from('contacts').update({ custom_name: customName, note: contactNote }).eq('id', existing.id).select().single();
+          if(data) setContacts(prev => prev.map(c => c.id === existing.id ? data : c));
+      } else {
+          const { data } = await supabase.from('contacts').insert({ user_id: myProfile.id, contact_id: showContactModal.id, custom_name: customName, note: contactNote }).select().single();
+          if (data) setContacts(prev => [...prev, data]);
+      }
+      setShowContactModal(null);
+  };
+
+  const handleDeleteContact = async () => {
+      if (!myProfile || !showContactModal) return;
+      const existing = contacts.find(c => c.contact_id === showContactModal.id);
+      if (existing) {
+          await supabase.from('contacts').delete().eq('id', existing.id);
+          setContacts(prev => prev.filter(c => c.id !== existing.id));
+      }
+      setShowContactModal(null);
+  };
+
+  const [activeMenu, setActiveMenu] = useState<'user' | 'logo' | 'chat' | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showRightSidebar, setShowRightSidebar] = useState(false);
+    const [isEditingContactRight, setIsEditingContactRight] = useState(false);
+    const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
+    const [isMoreOpen, setIsMoreOpen] = useState(false);
+    const [showLeftSettings, setShowLeftSettings] = useState(false);
+    const [showLeftProfileEdit, setShowLeftProfileEdit] = useState(false);
+function formatLastSeenImproved(d?: string) {
+    if (!d) return "";
+    const now = new Date();
+    const dt = new Date(d);
+    const diffMs = now.getTime() - dt.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 3) return 'в сети';
+    const isSameDay = now.toDateString() === dt.toDateString();
+    if (isSameDay) return `был в ${dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+    if (yesterday.toDateString() === dt.toDateString()) return 'был(а) вчера';
+    const twoDays = new Date(); twoDays.setDate(now.getDate() - 2);
+    if (twoDays.toDateString() === dt.toDateString()) return 'был(а) недавно';
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    if (diffMs > oneWeekMs) return 'был(а) давно';
+    return `был ${dt.toLocaleDateString('ru-RU')}`;
+}
+  const [showDeleteChatModal, setShowDeleteChatModal] = useState(false);
+  const [deleteForEveryone, setDeleteForEveryone] = useState(false);
+  const [showReportModal, setShowReportModal] = useState<Message | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportComment, setReportComment] = useState("");
+  const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [activeRoom, setActiveRoomState] = useState<Room | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [pinnedMessage, setPinnedMessage] = useState<MessagePayload | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [groupMembers, setGroupMembers] = useState<Profile[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  
+    // Derived helpers for right sidebar
+    const currentContact = activeRoom?.type === 'private' && activeRoom.other_user ? contacts.find(c => c.contact_id === activeRoom.other_user.id) : null;
+    const mediaItems = messages.filter(m => m.decoded?.file && (m.decoded.file.type === 'image' || m.decoded.file.type === 'video')).slice().reverse();
+  
+  const [isBlocked, setIsBlocked] = useState(false); 
+  const [iAmBlocked, setIAmBlocked] = useState(false); 
+
+  const [inputText, setInputText] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  
+    const [contextMenu, setContextMenu] = useState<{x:number, y:number, msg: Message}|null>(null);
+        const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+        const [forwardSearch, setForwardSearch] = useState("");
+        const [forwardTab, setForwardTab] = useState<'all'|'private'|'bots'|'channels'|'groups'>('all');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lightboxSrc, setLightboxSrc] = useState<{url: string, type: 'image'|'video'}|null>(null);
+
+  const msgEndRef = useRef<HTMLDivElement>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const channelAvatarRef = useRef<HTMLInputElement>(null);
+  const groupAvatarRef = useRef<HTMLInputElement>(null);
+  
+  const fetchContacts = async (uid: string) => {
+      const { data } = await supabase.from('contacts').select('*').eq('user_id', uid);
+      if (data && data.length > 0) {
+          const { data: profs } = await supabase.from('profiles').select('*').in('id', data.map(c => c.contact_id));
+          const enriched = data.map(c => ({ ...c, profile: profs?.find(p => p.id === c.contact_id) }));
+          setContacts(enriched);
+      } else {
+          setContacts([]);
+      }
+  };
+
+  const getDisplayName = (prof?: Profile) => {
+      if (!prof) return "Unknown";
+      if (prof.is_banned) return "Удаленный аккаунт";
+      const contact = contacts.find(c => c.contact_id === prof.id);
+      return contact?.custom_name || prof.display_name;
+  };
+
+  const getSenderProfile = (sender_id: string, msgProfile?: Profile) => {
+      if (sender_id === myProfile?.id) return myProfile;
+      if (msgProfile) return msgProfile;
+      if (activeRoom?.type === 'private') return activeRoom.other_user;
+      return groupMembers.find(g => g.id === sender_id);
+  };
+
+  useEffect(() => { myProfileRef.current = myProfile; }, [myProfile]);
+  useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+  
+  const setActiveRoom = (room: Room | null) => { 
+      setActiveRoomState(room); 
+      activeRoomRef.current = room; 
+      setIsBlocked(false); 
+      setIAmBlocked(false); 
+      setIsCalling(false);
+      if (room) {
+          window.history.pushState(null, '', '/#' + (room.slug || room.id));
+      } else {
+          window.history.pushState(null, '', window.location.pathname);
+      }
+  };
+
+  useEffect(() => {
+      const handlePopState = () => {
+          const path = window.location.hash.slice(1);
+          if (!path) setActiveRoomState(null);
+      };
+      window.addEventListener('popstate', handlePopState);
+      window.addEventListener('hashchange', handlePopState);
+      return () => {
+          window.removeEventListener('popstate', handlePopState);
+          window.removeEventListener('hashchange', handlePopState);
+      };
+  }, []);
+
+  useEffect(() => {
+      const handleRouting = async () => {
+          const path = window.location.hash.slice(1);
+          if (!path || !myProfileRef.current) return;
+          
+          if (activeRoomRef.current?.id === path || activeRoomRef.current?.slug === path) return;
+
+          let found = rooms.find(r => r.id === path || r.slug === path);
+          if (found) {
+              setActiveRoomState(found);
+              activeRoomRef.current = found;
+          } else {
+              const { data: roomData } = await supabase.from('rooms').select('*').or(`id.eq.${path},slug.eq.${path}`).maybeSingle();
+              if (roomData) {
+                  const { data: member } = await supabase.from('room_members').select('*').eq('room_id', roomData.id).eq('user_id', myProfileRef.current.id).maybeSingle();
+                  const enrichedRoom = { ...roomData, is_member: !!member, unread_count: 0 };
+                  setActiveRoomState(enrichedRoom);
+                  activeRoomRef.current = enrichedRoom;
+              }
+          }
+      };
+      if (rooms.length > 0) handleRouting();
+  }, [rooms.length]);
+
+  const handleAuthCheck = async () => {
+      setLoading(true);
+      const { data } = await supabase.from('invite_tokens').select('*').eq('token', inviteToken.trim().toUpperCase()).single();
+      if (!data) { addToast("Неверный токен доступа", "error"); setLoading(false); return; }
+      if (data.is_used) setStep('login'); else setStep('setup');
+      setLoading(false);
+  };
+
+  const handleLogin = async () => {
+      setLoading(true);
+      const { data } = await supabase.from('profiles').select('*').eq('password_hash', passwordInput).single();
+      if (data) {
+          if (data.is_banned) {
+              addToast("Этот аккаунт удален", "error");
+              setLoading(false);
+              return;
+          }
+          localStorage.setItem('aperture_user_id', data.id);
+          const privKey = data.private_key || localStorage.getItem("key_" + data.id) || "";
+          localStorage.setItem('aperture_private_key', privKey);
+          localStorage.setItem("key_" + data.id, privKey);
+          setMyProfile(data);
+          fetchContacts(data.id);
+          setStep('chat');
+      } else { addToast("Неверный пароль", "error"); }
+      setLoading(false);
+  };
+
+  const checkUsername = async (val: string) => {
+      setFormUsername(val);
+      if (val.length < 3) return setUserStatus('none');
+      if (myProfile && val === myProfile.username) return setUserStatus('current');
+      const { data } = await supabase.from('profiles').select('username').eq('username', val.toLowerCase()).maybeSingle();
+      setUserStatus(data ? 'taken' : 'available');
+  };
+
+  const handleRegister = async () => {
+      if (userStatus === 'taken' || !formUsername) { addToast("Юзернейм занят", "error"); return; }
+      setLoading(true);
+      const newId = crypto.randomUUID();
+      const keys = await generateKeyPair(); 
+      const pwd = generatePassword();
+      setGeneratedPassword(pwd);
+      let avatarUrl = DEFAULT_AVATAR;
+      if (formAvatarFile) {
+          const fileName = Date.now() + "_" + Math.random();
+          const { data } = await supabase.storage.from('avatars').upload(fileName, formAvatarFile);
+          if (data) avatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl;
+      }
+      
+      await supabase.from('profiles').insert({ 
+          id: newId, username: formUsername, display_name: formName, bio: formBio, 
+          custom_status: formStatus, custom_status_color: formStatusColor, avatar_url: avatarUrl, 
+          public_key: keys.pubB64, private_key: keys.privB64, status: 'online', 
+          last_seen: new Date().toISOString(), password_hash: pwd 
+      });
+
+      const OFFICIAL_CHANNEL_ID = '4b66de87-36aa-4c14-999a-51196db49878';
+      await supabase.from('room_members').insert({ room_id: OFFICIAL_CHANNEL_ID, user_id: newId });
+
+      await supabase.from('invite_tokens').update({ is_used: true }).eq('token', inviteToken.trim().toUpperCase());
+      localStorage.setItem("key_" + newId, keys.privB64);
+      localStorage.setItem('aperture_private_key', keys.privB64);
+      localStorage.setItem('aperture_user_id', newId);
+      setMyProfile({ id: newId, username: formUsername, display_name: formName, bio: formBio, custom_status: formStatus, custom_status_color: formStatusColor, avatar_url: avatarUrl, public_key: keys.pubB64, private_key: keys.privB64, last_seen: new Date().toISOString() });
+      setStep('success');
+      setLoading(false);
+  };
+  
+  const openSettings = () => { if (!myProfile) return; setFormName(myProfile.display_name); setFormUsername(myProfile.username); setFormBio(myProfile.bio); setFormDob(myProfile.dob || ""); setFormStatus(myProfile.custom_status || "tie"); setFormStatusColor(myProfile.custom_status_color || "#3b82f6"); setFormAvatarPreview(myProfile.avatar_url); setUserStatus('current'); setShowSettings(true); setActiveMenu(null); };
+        const openLeftProfileEdit = () => { if (!myProfile) return; const parts = (myProfile.display_name||"").split(" "); if (parts.length > 1) { setFormName(parts[0]); setContactLastName(parts.slice(1).join(" ")); } else { setFormName(myProfile.display_name || ""); setContactLastName(""); } setFormUsername(myProfile.username); setFormBio(myProfile.bio); setFormDob(myProfile.dob || ""); setFormStatus(myProfile.custom_status || "tie"); setFormStatusColor(myProfile.custom_status_color || "#3b82f6"); setFormAvatarPreview(myProfile.avatar_url); setUserStatus('current'); setShowLeftProfileEdit(true); setActiveMenu(null); };
+  
+    const handleUpdateProfile = async () => { if (!myProfile) return; setLoading(true); let avatarUrl = myProfile.avatar_url; if (formAvatarFile) { const fileName = Date.now() + "_" + Math.random(); const { data } = await supabase.storage.from('avatars').upload(fileName, formAvatarFile); if (data) avatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl; } const displayNameCombined = formName + (contactLastName ? ` ${contactLastName}` : ''); await supabase.from('profiles').update({ display_name: displayNameCombined, username: formUsername, bio: formBio, dob: formDob, custom_status: formStatus, custom_status_color: formStatusColor, avatar_url: avatarUrl }).eq('id', myProfile.id); setMyProfile({ ...myProfile, display_name: displayNameCombined, username: formUsername, bio: formBio, dob: formDob, custom_status: formStatus, custom_status_color: formStatusColor, avatar_url: avatarUrl }); setShowSettings(false); addToast("Профиль успешно обновлен", "success"); setLoading(false); };
+    const handleUpdateProfileLeft = async () => { await handleUpdateProfile(); setShowLeftProfileEdit(false); };
+
+  const checkChannelSlug = async (val: string) => { setChannelData({...channelData, slug: val}); if (val.length < 3) return setUserStatus('none'); const { data } = await supabase.from('rooms').select('slug').eq('slug', val.toLowerCase()).maybeSingle(); setUserStatus(data ? 'taken' : 'available'); };
+  
+  const handleSearchResultClick = (u: any) => {
+      if (u.type) { 
+          const existingRoom = rooms.find(r => r.id === u.id);
+          if (existingRoom) {
+              setActiveRoom(existingRoom);
+          } else {
+              setActiveRoom({ ...u, is_member: false, unread_count: 0 });
+          }
+          setSearchQuery("");
+      } else {
+          startChat(u);
+      }
+  };
+
+  const searchUsersForGroup = async (val: string) => { 
+      setUserSearchQuery(val); 
+      if(val.length > 1) { 
+          const { data } = await supabase.from('profiles').select('*').ilike('username', `%${val}%`).neq('id', myProfile!.id).limit(5); 
+          setUserSearchResults(data || []); 
+      } else {
+          setUserSearchResults([]); 
+      }
+  };
+	
+  const insertSystemMessage = async (roomId: string, text: string, fileData?: any, isCall?: any) => {
+      const payload: MessagePayload = { text, isSystem: true, file: fileData, isCall };
+      const enc = await encryptMessage(payload, "", myProfile!.public_key);
+      if(enc) await supabase.from('messages').insert({ room_id: roomId, sender_id: myProfile!.id, content: enc.content, enc_key_recipient: enc.keyRec, enc_key_sender: enc.keySend });
+  };
+
+  const markMessagesRead = async (ids: string[]) => {
+      if (!ids || ids.length === 0) return;
+      try {
+          const { error } = await supabase.from('messages').update({ is_read: true }).in('id', ids);
+          if (error) console.error('markMessagesRead error', error);
+      } catch (e) { console.error('markMessagesRead exception', e); }
+  };
+
+  const handleCreateChannel = async () => {
+    setLoading(true);
+    const newRoomId = crypto.randomUUID();
+    let avatarUrl = "";
+    if (formAvatarFile) { const fileName = Date.now() + "_ch_" + Math.random(); const { data } = await supabase.storage.from('avatars').upload(fileName, formAvatarFile); if (data) avatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl; }
+    const roomData = { id: newRoomId, type: 'channel', title: channelData.title, description: channelData.desc, slug: channelData.type === 'public' ? channelData.slug.toLowerCase() : null, invite_link: channelData.type === 'private' ? "https://t.me/+" + Math.random().toString(36).slice(-10) : null, owner_id: myProfile!.id, avatar_url: avatarUrl || DEFAULT_AVATAR, updated_at: new Date().toISOString() };
+    await supabase.from('rooms').insert(roomData);
+    await supabase.from('room_members').insert({ room_id: newRoomId, user_id: myProfile!.id });
+    await insertSystemMessage(newRoomId, "Канал создан");
+    setLoading(false); setShowChannelWizard(false); setChannelData({ title: '', desc: '', type: 'public', slug: '' }); setChannelStep(1); fetchRooms(); 
+  };
+
+  const handleCreateGroup = async () => {
+      setLoading(true);
+      const newRoomId = crypto.randomUUID();
+      let avatarUrl = "";
+      if (formAvatarFile) { const fileName = Date.now() + "_gr_" + Math.random(); const { data } = await supabase.storage.from('avatars').upload(fileName, formAvatarFile); if (data) avatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl; }
+      const roomData = { id: newRoomId, type: 'group', title: createData.title, description: createData.desc, owner_id: myProfile!.id, avatar_url: avatarUrl || DEFAULT_AVATAR, updated_at: new Date().toISOString() };
+      await supabase.from('rooms').insert(roomData);
+      await supabase.from('room_members').insert({ room_id: newRoomId, user_id: myProfile!.id });
+      await insertSystemMessage(newRoomId, "Группа создана");
+      if (selectedUsers.length > 0) {
+          await supabase.from('room_members').insert(selectedUsers.map(u => ({ room_id: newRoomId, user_id: u.id })));
+          for (const u of selectedUsers) { await insertSystemMessage(newRoomId, `${getDisplayName(myProfile!)} добавил ${getDisplayName(u)}`); }
+      }
+      setLoading(false); setShowGroupWizard(false); fetchRooms(); 
+  };
+
+  const handleUpdateChannel = async () => {
+      if (!activeRoom || activeRoom.owner_id !== myProfile?.id) return;
+      setLoading(true);
+      let avatarUrl = activeRoom.avatar_url;
+      let avatarChanged = false;
+      if (formAvatarFile) { 
+          const fileName = Date.now() + "_ch_" + Math.random(); 
+          const { data } = await supabase.storage.from('avatars').upload(fileName, formAvatarFile); 
+          if (data) { avatarUrl = supabase.storage.from('avatars').getPublicUrl(fileName).data.publicUrl; avatarChanged = true; } 
+      }
+      const updateData = { title: channelData.title, description: channelData.desc, slug: channelData.type === 'public' ? channelData.slug : null, avatar_url: avatarUrl }; 
+      await supabase.from('rooms').update(updateData).eq('id', activeRoom.id);
+      
+      if(avatarChanged) {
+          await insertSystemMessage(activeRoom.id, "Обновлена аватарка", { url: avatarUrl!, type: 'image', name: 'avatar.jpg' });
+      }
+      if(channelData.title && channelData.title !== activeRoom.title) {
+          await insertSystemMessage(activeRoom.id, `Название изменено на «${channelData.title}»`);
+      }
+      
+      setActiveRoom({...activeRoom, ...updateData}); setIsEditingChannel(false); setLoading(false);
+  };
+
+  const startCall = async (isVideo: boolean) => {
+      if (!activeRoom || !myProfile) return;
+      setIsCalling(true);
+      if (activeRoom.type === 'private') {
+          const targetUserId = activeRoom.other_user?.id;
+          if (globalChannelRef.current) {
+              globalChannelRef.current.send({
+                  type: 'broadcast',
+                  event: 'ring',
+                  payload: { caller: myProfile, room: activeRoom, targetUserId, isVideo }
+              });
+          }
+          await insertSystemMessage(activeRoom.id, "Исходящий звонок", undefined, 'outgoing');
+      } else {
+          await insertSystemMessage(activeRoom.id, `${getDisplayName(myProfile)} начал(а) ${isVideo ? 'видеозвонок' : 'голосовой чат'}`);
+      }
+  };
+  
+  const startEditChannel = () => { if (!activeRoom) return; setChannelData({ title: activeRoom.title || "", desc: activeRoom.description || "", type: activeRoom.slug ? 'public' : 'private', slug: activeRoom.slug || "" }); setFormAvatarPreview(activeRoom.avatar_url || null); setFormAvatarFile(null); setIsEditingChannel(true); setShowRightSidebar(true); setActiveMenu(null); };
+  
+  const handleAddMember = async (user: Profile) => { 
+      if (!activeRoom) return; 
+      if (groupMembers.some(m => m.id === user.id)) return addToast("Пользователь уже в группе", "error"); 
+      await supabase.from('room_members').insert({ room_id: activeRoom.id, user_id: user.id }); 
+      if (activeRoom.type !== 'channel') await insertSystemMessage(activeRoom.id, `${getDisplayName(myProfile!)} добавил ${getDisplayName(user)}`); 
+      setGroupMembers(prev => [...prev, user]); 
+      setShowAddMemberModal(false); 
+  };
+  
+  const joinChannel = async (room: Room) => { 
+      if (!myProfile) return; 
+      await supabase.from('room_members').insert({ room_id: room.id, user_id: myProfile.id }); 
+      if (room.type !== 'channel') await insertSystemMessage(room.id, `${getDisplayName(myProfile)} присоединился`); 
+      setActiveRoom({...room, is_member: true}); 
+      fetchRooms(); 
+  };
+  
+  const leaveChannel = async (room: Room) => { 
+      if (!myProfile) return; 
+      if (room.type !== 'channel') await insertSystemMessage(room.id, `${getDisplayName(myProfile)} покинул ${room.type === 'group' ? 'группу' : 'чат'}`); 
+      await supabase.from('room_members').delete().eq('room_id', room.id).eq('user_id', myProfile.id); 
+      setActiveRoom(null); 
+      fetchRooms(); 
+  };
+
+  const startChat = async (user: Profile) => {
+      const { data: id } = await supabase.rpc('get_private_chat_id', { user_a: myProfile!.id, user_b: user.id });
+      let roomId = id;
+      if (!roomId) {
+          const { data: r } = await supabase.from('rooms').insert({ updated_at: new Date().toISOString(), type: 'private' }).select().single();
+          roomId = r.id;
+          await supabase.from('room_members').insert([{ room_id: roomId, user_id: myProfile!.id }, { room_id: roomId, user_id: user.id }]);
+      }
+      const { data: r } = await supabase.from('rooms').select('*').eq('id', roomId).single();
+      const fullRoom = { ...r, other_user: user, unread_count: 0, type: 'private' };
+      setActiveRoom(fullRoom);
+      setRooms(prev => { const exists = prev.find(p => p.id === roomId); if (exists) return prev; return [fullRoom, ...prev]; });
+      setSearchQuery("");
+  };
+
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchRooms = () => {
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+      fetchTimeoutRef.current = setTimeout(async () => {
+          if (!myProfileRef.current) return;
+          const { data, error } = await supabase.rpc('get_user_chats', { p_user_id: myProfileRef.current.id });
+          if (data && !error) setRooms(data);
+      }, 300); 
+  };
+
+  const onSearch = async (val: string) => { 
+      setSearchQuery(val); 
+      if (val.length > 1) { 
+          const { data: users } = await supabase.from('profiles').select('*').ilike('username', `%${val}%`).neq('id', myProfile!.id); 
+          const { data: channels } = await supabase.from('rooms').select('*').or(`type.eq.channel,type.eq.group`).ilike('slug', `%${val}%`); 
+          
+          const matchingContacts = contacts
+              .filter(c => c.custom_name?.toLowerCase().includes(val.toLowerCase()) || c.profile?.display_name?.toLowerCase().includes(val.toLowerCase()))
+              .map(c => c.profile)
+              .filter(Boolean) as Profile[];
+          
+          const allUsers = [...(users||[]), ...matchingContacts].filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+          setSearchResults([...allUsers, ...(channels||[])]); 
+      } else { 
+          setSearchResults([]); 
+      } 
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, msg: Message) => { 
+      e.preventDefault(); 
+      e.stopPropagation(); 
+      if (msg.is_deleted || msg.decoded?.isSystem || msg.decoded?.isCall) return; 
+      
+      let x = e.clientX;
+      let y = e.clientY;
+      if (x + 220 > window.innerWidth) x = window.innerWidth - 230;
+      if (y + 350 > window.innerHeight) y = window.innerHeight - 360;
+
+      setContextMenu({ x, y, msg }); 
+  };
+
+  const closeMenu = () => { 
+      setContextMenu(null); 
+      setShowEmojiPicker(false); 
+      setActiveMenu(null); 
+  };
+  
+  const toggleMenu = (e: React.MouseEvent, menu: 'user' | 'logo' | 'chat') => {
+      e.stopPropagation();
+      setActiveMenu(activeMenu === menu ? null : menu);
+      setShowEmojiPicker(false);
+  };
+
+  const handleReaction = async (emoji: string) => { if (!contextMenu) return; const r = contextMenu.msg.reactions || {}; const u = r[emoji] || []; if (u.includes(myProfile!.id)) r[emoji] = u.filter(i=>i!==myProfile!.id); else r[emoji] = [...u, myProfile!.id]; if (r[emoji].length===0) delete r[emoji]; await supabase.from('messages').update({ reactions: r }).eq('id', contextMenu.msg.id); closeMenu(); };
+  const handleReactionForMessage = async (message: Message, emoji: string) => { const r = message.reactions || {}; const u = r[emoji] || []; if (u.includes(myProfile!.id)) r[emoji] = u.filter(i=>i!==myProfile!.id); else r[emoji] = [...u, myProfile!.id]; if (r[emoji].length===0) delete r[emoji]; await supabase.from('messages').update({ reactions: r }).eq('id', message.id); };
+    const handleDeleteMessage = async () => {
+        if (!contextMenu) return;
+        const msgId = contextMenu.msg.id;
+        try {
+            const { error } = await supabase.from('messages').update({ is_deleted: true, content: '' }).eq('id', msgId);
+            if (error) {
+                console.error('Delete message error', error);
+                addToast('Не удалось удалить сообщение', 'error');
+            } else {
+                setMessages(prev => prev.map(m => m.id === msgId ? { ...m, is_deleted: true, content: '' } : m));
+                addToast('Сообщение удалено', 'success');
+            }
+        } catch (e) {
+            console.error('Exception deleting message', e);
+            addToast('Ошибка при удалении сообщения', 'error');
+        }
+        closeMenu();
+    };
+  const handleAdminDelete = async () => { if(!contextMenu) return; const reason = prompt("Причина удаления (Нарушение)?", "Спам"); await supabase.from('messages').update({ is_deleted: true, content: '', violation_reason: reason }).eq('id', contextMenu.msg.id); closeMenu(); };
+  
+  const handlePin = async () => { 
+      if(contextMenu) {
+          await supabase.from('rooms').update({ pinned_message_id: contextMenu.msg.id }).eq('id', activeRoom!.id); 
+          await insertSystemMessage(activeRoom!.id, `${getDisplayName(myProfile!)} закрепил сообщение`);
+          closeMenu();
+      }
+  };
+  
+  const handleUnpin = async () => { 
+      await supabase.from('rooms').update({ pinned_message_id: null }).eq('id', activeRoom!.id); 
+      await insertSystemMessage(activeRoom!.id, `${getDisplayName(myProfile!)} открепил сообщение`);
+      setPinnedMessage(null); 
+  };
+
+  const handleScrollToPin = () => { if (pinnedMessage && activeRoom?.pinned_message_id) { const el = document.getElementById("msg-" + activeRoom.pinned_message_id); if (el) el.scrollIntoView({behavior:'smooth', block: 'center'}); } };
+  const handleReply = () => { setReplyTo(contextMenu!.msg); closeMenu(); };
+  const handleEditStart = () => { if (!contextMenu) return; setEditingMessage(contextMenu.msg); setInputText(contextMenu.msg.decoded?.text || ""); closeMenu(); };
+  const handleCopyText = () => { if (contextMenu?.msg.decoded?.text) navigator.clipboard.writeText(contextMenu.msg.decoded.text); closeMenu(); };
+  const handleBulkDelete = async () => { if (selectedIds.size===0) return; await supabase.from('messages').update({ is_deleted: true, content: '' }).in('id', Array.from(selectedIds)); setSelectedIds(new Set()); setSelectionMode(false); };
+  const toggleSelection = (id: string) => { const newSet = new Set(selectedIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedIds(newSet); if (newSet.size === 0) setSelectionMode(false); };
+  const toggleMute = async () => { if (!activeRoom || !myProfile) return; const newVal = !activeRoom.is_muted; await supabase.from('room_members').update({ is_muted: newVal }).eq('room_id', activeRoom.id).eq('user_id', myProfile.id); setActiveRoom({ ...activeRoom, is_muted: newVal }); setActiveMenu(null); };
+  const handleClearHistory = async () => { if (!activeRoom || !myProfile) return; if (!confirm("Вы уверены?")) return; await supabase.from('messages').delete().eq('room_id', activeRoom.id); setActiveMenu(null); };
+  const handleDeleteChat = async () => { if (!activeRoom || !myProfile) return; setLoading(true); if (activeRoom.type === 'channel' && activeRoom.owner_id === myProfile.id) { await supabase.from('rooms').delete().eq('id', activeRoom.id); } else { if (deleteForEveryone && activeRoom.type==='private') await supabase.from('rooms').delete().eq('id', activeRoom.id); else await supabase.from('room_members').delete().eq('room_id', activeRoom.id).eq('user_id', myProfile.id); } setActiveRoom(null); setRooms(prev => prev.filter(r => r.id !== activeRoom!.id)); setShowDeleteChatModal(false); setLoading(false); };
+  const toggleBlock = async () => { if (!activeRoom || !myProfile || !activeRoom.other_user) return; if (isBlocked) { await supabase.from('blocked_users').delete().eq('blocker_id', myProfile.id).eq('blocked_id', activeRoom.other_user.id); setIsBlocked(false); } else { await supabase.from('blocked_users').insert({ blocker_id: myProfile.id, blocked_id: activeRoom.other_user.id }); setIsBlocked(true); } };
+  const checkBlockStatus = async (otherId: string) => { if (!myProfile) return; const { data: b1 } = await supabase.from('blocked_users').select('*').eq('blocker_id', myProfile.id).eq('blocked_id', otherId).maybeSingle(); setIsBlocked(!!b1); const { data: b2 } = await supabase.from('blocked_users').select('*').eq('blocker_id', otherId).eq('blocked_id', myProfile.id).maybeSingle(); setIAmBlocked(!!b2); };
+  const handleReport = async () => { if (!showReportModal || !myProfile) return; await supabase.from('reports').insert({ reporter_id: myProfile.id, target_id: showReportModal.id, type: 'message', reason: reportReason, comment: reportComment }); setShowReportModal(null); setReportReason(""); setReportComment(""); addToast("Жалоба отправлена", "success"); };
+
+    const forwardToRoom = async (roomId: string) => {
+        if (!forwardMessage || !myProfile) return;
+        const room = rooms.find(r => r.id === roomId);
+        const recipientKey = room?.other_user?.public_key || "";
+        const myKey = myProfile.public_key;
+        const senderName = forwardMessage.sender_profile ? getDisplayName(forwardMessage.sender_profile) : getDisplayName(getSenderProfile(forwardMessage.sender_id));
+        const text = forwardMessage.decoded?.text ? `Переслано от ${senderName}: ${forwardMessage.decoded.text}` : `Переслано от ${senderName}`;
+        const fileData = forwardMessage.decoded?.file ? forwardMessage.decoded.file : undefined;
+
+        const payload: MessagePayload = { text, file: fileData };
+        const encrypted = await encryptMessage(payload, recipientKey || "", myKey);
+        if (encrypted) {
+            await supabase.from('messages').insert({ room_id: roomId, sender_id: myProfile.id, content: encrypted.content, enc_key_recipient: encrypted.keyRec, enc_key_sender: encrypted.keySend });
+            await supabase.from('rooms').update({ updated_at: new Date().toISOString(), last_message_preview: text || "📎 Вложение" }).eq('id', roomId);
+            addToast("Сообщение переслано", "success");
+        } else {
+            addToast("Не удалось зашифровать сообщение", "error");
+        }
+        setForwardMessage(null);
+    };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files) { const files = Array.from(e.target.files); setSelectedFiles(prev => [...prev, ...files]); setFilePreviews(prev => [...prev, ...files.map(f => (f.type.startsWith('image/')||f.type.startsWith('video/')) ? URL.createObjectURL(f) : "")]); } };
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const file = e.target.files[0];
+      if (file.type.startsWith('image/')) {
+        const imageUrl = URL.createObjectURL(file);
+        setCropperImageSrc(imageUrl);
+        setShowImageCropper(true);
+      } else {
+        setFormAvatarFile(file);
+        setFormAvatarPreview(URL.createObjectURL(file));
+      }
+    }
+  };
+  const handleCropComplete = (croppedFile: File) => {
+    setFormAvatarFile(croppedFile);
+    setFormAvatarPreview(URL.createObjectURL(croppedFile));
+    setShowImageCropper(false);
+    if (cropperImageSrc) {
+      URL.revokeObjectURL(cropperImageSrc);
+      setCropperImageSrc("");
+    }
+  };
+  const removeFile = (idx: number) => { setSelectedFiles(prev => prev.filter((_, i) => i !== idx)); setFilePreviews(prev => prev.filter((_, i) => i !== idx)); };
+  const onPaste = (e: React.ClipboardEvent) => { const items = e.clipboardData.items; const files: File[] = []; for (let i=0; i<items.length; i++) { if (items[i].kind==='file') { const f = items[i].getAsFile(); if (f) files.push(f); } } if (files.length > 0) { setSelectedFiles(prev => [...prev, ...files]); setFilePreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))]); } };
+  const handleEmojiClick = (e: any) => { setInputText(p => p + e.emoji); };
+
+  const startRecording = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const recorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = recorder;
+          audioChunksRef.current = [];
+          recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+          recorder.onstop = () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              const file = new File([audioBlob], "voice.webm", { type: 'audio/webm' });
+              setSelectedFiles([file]);
+              setIsRecording(false);
+              setRecordingTime(0);
+              clearInterval(recordingTimerRef.current!);
+              sendMessage(true); 
+          };
+          recorder.start();
+          setIsRecording(true);
+          const timer = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+          recordingTimerRef.current = timer;
+      } catch (e) { console.error("Mic error", e); }
+  };
+  const stopRecording = () => { mediaRecorderRef.current?.stop(); };
+  const cancelRecording = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); setRecordingTime(0); clearInterval(recordingTimerRef.current!); setSelectedFiles([]); };
+
+  const sendMessage = async (isVoice = false) => {
+      if ((!inputText.trim() && selectedFiles.length === 0) || !myProfile) return;
+      if (activeRoom?.type === 'channel' && activeRoom.owner_id !== myProfile.id) return; 
+      
+      const text = inputText; 
+      const currentFiles = [...selectedFiles];
+      if (!isVoice) { setInputText(""); setSelectedFiles([]); setFilePreviews([]); setReplyTo(null); setShowEmojiPicker(false); }
+
+      const recipientKey = activeRoom?.other_user?.public_key; 
+      const myKey = myProfile.public_key;
+      const tempId = crypto.randomUUID();
+
+      let optimisticFile = undefined;
+      if (currentFiles.length > 0) {
+          const file = currentFiles[0];
+          const ext = file.name.split('.').pop()?.toLowerCase();
+          const isAudio = isVoice || file.type.startsWith('audio/') || ['mp3','wav','ogg','m4a'].includes(ext||'');
+          optimisticFile = {
+              url: URL.createObjectURL(file),
+              type: isAudio ? 'audio' : (file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'),
+              name: isVoice ? "Голосовое сообщение" : file.name,
+              size: file.size
+          };
+      }
+
+      const payload: MessagePayload = { text, file: optimisticFile as any };
+
+      if (!editingMessage) {
+          setMessages(prev => [...prev, { id: tempId, room_id: activeRoom!.id, sender_id: myProfile.id, content: "", enc_key_recipient: "", enc_key_sender: "", created_at: new Date().toISOString(), is_read: false, is_deleted: false, is_edited: false, decoded: payload, replySender: replyTo?.sender_profile, replyDecoded: replyTo?.decoded, reactions: {}, sender_profile: myProfile }]);
+          setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      }
+
+      const send = async (finalPayload: MessagePayload) => {
+          const encrypted = await encryptMessage(finalPayload, recipientKey || "", myKey); 
+          if (encrypted) {
+              if (editingMessage) {
+                  await supabase.from('messages').update({ content: encrypted.content, enc_key_recipient: encrypted.keyRec, enc_key_sender: encrypted.keySend, is_edited: true }).eq('id', editingMessage.id);
+                  setEditingMessage(null);
+              } else {
+                  await supabase.from('messages').insert({ room_id: activeRoom!.id, sender_id: myProfile!.id, content: encrypted.content, enc_key_recipient: encrypted.keyRec, enc_key_sender: encrypted.keySend, reply_to_id: replyTo?.id });
+              }
+          }
+      };
+
+      if (currentFiles.length === 0) {
+          await send({ text });
+      } else {
+          for (const file of currentFiles) {
+              const ext = file.name.split('.').pop()?.toLowerCase();
+              const fileName = Date.now() + "_" + Math.random() + "." + ext;
+              const { data } = await supabase.storage.from('chat_files').upload(fileName, file);
+              if (data) {
+                  const { data: pub } = supabase.storage.from('chat_files').getPublicUrl(fileName);
+                  const isAudio = isVoice || file.type.startsWith('audio/') || ['mp3','wav','ogg','m4a'].includes(ext||'');
+                  const type = isAudio ? 'audio' : (file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file');
+                  await send({ text: text, file: { url: pub.publicUrl, type, name: isVoice ? "Голосовое сообщение" : file.name, size: file.size } });
+              }
+          }
+      }
+      await supabase.from('rooms').update({ updated_at: new Date().toISOString(), last_message_preview: isVoice ? "🎤 Голосовое" : (text || "📎 Вложение") }).eq('id', activeRoom!.id);
+      if(isVoice) setSelectedFiles([]);
+  };
+
+  useEffect(() => {
+    const init = async () => {
+        if (Notification.permission === 'default') Notification.requestPermission();
+        const uid = localStorage.getItem('aperture_user_id');
+        if (uid) {
+            const { data } = await supabase.from('profiles').select('*').eq('id', uid).single();
+            if (data) { 
+                setMyProfile(data); 
+                fetchContacts(data.id);
+                setStep('chat');
+                await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', uid);
+            } else { localStorage.removeItem('aperture_user_id'); }
+        }
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    if (!myProfile) return;
+    const interval = setInterval(() => { supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', myProfile.id).then(); }, 30000); 
+    return () => clearInterval(interval);
+  }, [myProfile]);
+
+  useEffect(() => {
+      if (step === 'chat') {
+          fetchRooms();
+          const ch = supabase.channel('global_updates', { config: { broadcast: { self: true } } })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, fetchRooms)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, fetchRooms)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_members' }, (pl) => { if(pl.new.user_id === myProfileRef.current?.id) fetchRooms(); })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                fetchRooms();
+                if (activeRoomRef.current?.id !== payload.new.room_id) {
+                    supabase.from('room_members').select('is_muted').eq('room_id', payload.new.room_id).eq('user_id', myProfileRef.current!.id).single().then(({data}) => {
+                        if (!data?.is_muted && payload.new.sender_id !== myProfileRef.current?.id) playNotification();
+                    });
+                }
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, fetchRooms)
+            .on('broadcast', { event: 'ring' }, (payload) => {
+                const { room, caller, targetUserId } = payload.payload;
+                if (targetUserId === myProfileRef.current?.id) {
+                    setIncomingCall({ room, caller });
+                }
+            })
+            .subscribe();
+          
+          globalChannelRef.current = ch;
+          return () => { supabase.removeChannel(ch); globalChannelRef.current = null; };
+      }
+  }, [step]);
+
+  useEffect(() => {
+      if (!activeRoom || !myProfile) return;
+      if (activeRoom.type === 'private' && activeRoom.other_user) checkBlockStatus(activeRoom.other_user.id);
+      
+      if (activeRoom.type !== 'private') {
+          supabase.from('room_members').select('user_id').eq('room_id', activeRoom.id).then(({data}) => {
+              if(data) {
+                  const ids = data.map(m=>m.user_id);
+                  const uniqueIds = Array.from(new Set(ids));
+                  supabase.from('profiles').select('*').in('id', uniqueIds).then(({data: profiles}) => setGroupMembers(profiles || []));
+              }
+          });
+      }
+
+      const load = async () => {
+          let retries = 0;
+          while (!localStorage.getItem('aperture_private_key') && retries < 10) { await new Promise(r => setTimeout(r, 200)); retries++; }
+
+          const { data } = await supabase.from('messages').select('*, sender_profile:profiles(*)').eq('room_id', activeRoom.id).order('created_at', { ascending: true });
+          if (data) {
+              const decoded = await Promise.all(data.map(async (msg) => {
+                  const key = msg.sender_id === myProfile!.id ? msg.enc_key_sender : msg.enc_key_recipient;
+                  const payload = await decryptMessage(msg.content, key);
+                  let rep = null;
+                  let repSender = null;
+                  if (msg.reply_to_id) {
+                      const src = data.find(r => r.id === msg.reply_to_id);
+                      if (src) {
+                          rep = await decryptMessage(src.content, src.sender_id===myProfile!.id ? src.enc_key_sender : src.enc_key_recipient);
+                          repSender = src.sender_profile;
+                      }
+                  }
+                  return { ...msg, decoded: payload || { text: "🔒" }, replyDecoded: rep, replySender: repSender };
+              }));
+              const unique = decoded.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+              
+              const unread = unique.filter(m => !m.is_read && m.sender_id !== myProfile.id).map(m => m.id);
+              if (unread.length > 0) {
+                  await markMessagesRead(unread);
+                  unique.forEach(m => { if(unread.includes(m.id)) m.is_read = true; });
+                  // Обновляем локальный стейт rooms, чтобы unread_count стал 0 для текущего activeRoom
+                  setRooms(prev => prev.map(r => r.id === activeRoom.id ? { ...r, unread_count: 0 } : r));
+                  // Также обновляем activeRoom, если он установлен
+                  setActiveRoom(activeRoom ? { ...activeRoom, unread_count: 0 } : null);
+
+                  fetchRooms();
+              } else {
+                  // Даже если нет непрочитанных, убеждаемся что unread_count = 0
+                  setRooms(prev => prev.map(r => r.id === activeRoom.id ? { ...r, unread_count: 0 } : r));
+                  setActiveRoom(activeRoom ? { ...activeRoom, unread_count: 0 } : null);
+
+              }
+              
+              setMessages(unique);
+              setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'auto' }), 100);
+          }
+          if (activeRoom.pinned_message_id) {
+              supabase.from('messages').select('*').eq('id', activeRoom.pinned_message_id).single().then(async ({data}) => {
+                  if(data) setPinnedMessage(await decryptMessage(data.content, data.sender_id===myProfile!.id?data.enc_key_sender:data.enc_key_recipient));
+              });
+          } else setPinnedMessage(null);
+      };
+      load();
+
+      const channelName = "room_messages_" + activeRoom.id;
+      const ch = supabase.channel(channelName)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: "room_id=eq." + activeRoom.id }, async (pl) => {
+            const newMsg = pl.new as Message;
+            const { data: sender } = await supabase.from('profiles').select('*').eq('id', newMsg.sender_id).single();
+            newMsg.sender_profile = sender;
+
+            const currentMe = myProfileRef.current;
+            if (!currentMe) return;
+
+            let rep = null;
+            let repSender = null;
+            if (newMsg.reply_to_id) {
+                const { data: srcMsg } = await supabase.from('messages').select('*, sender_profile:profiles(*)').eq('id', newMsg.reply_to_id).single();
+                if (srcMsg) {
+                    repSender = srcMsg.sender_profile;
+                    rep = await decryptMessage(srcMsg.content, srcMsg.sender_id===currentMe.id ? srcMsg.enc_key_sender : srcMsg.enc_key_recipient);
+                }
+            }
+
+            if (newMsg.sender_id === currentMe.id) {
+                setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...newMsg, decoded: m.decoded, sender_profile: sender, replyDecoded: rep, replySender: repSender } : m));
+                return;
+            }
+            
+            await markMessagesRead([newMsg.id]);
+            newMsg.is_read = true;
+            
+            // Обновляем unread_count в локальном стейте rooms
+            setRooms(prev => prev.map(r => r.id === activeRoom.id ? { ...r, unread_count: 0 } : r));
+            setActiveRoom(activeRoom ? { ...activeRoom, unread_count: 0 } : null);
+
+            
+            const key = newMsg.enc_key_recipient;
+            const payload = await decryptMessage(newMsg.content, key);
+            
+            setMessages(prev => {
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, { ...newMsg, decoded: payload || { text: "🔒 Encrypted" }, sender_profile: sender, replyDecoded: rep, replySender: repSender }];
+            });
+            setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: "room_id=eq." + activeRoom.id }, (pl) => {
+            const updatedMsg = pl.new as Message;
+            setMessages(prev => prev.map(m => {
+                if (m.id === updatedMsg.id) {
+                    return { ...m, is_read: updatedMsg.is_read, is_deleted: updatedMsg.is_deleted, is_edited: updatedMsg.is_edited, reactions: updatedMsg.reactions };
+                }
+                return m;
+            }));
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: "id=eq." + activeRoom.id }, pl => setActiveRoomState(p => p ? {...p, ...pl.new} : null))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_users' }, () => activeRoom.other_user && checkBlockStatus(activeRoom.other_user.id))
+        .subscribe();
+      return () => { supabase.removeChannel(ch); };
+  }, [activeRoom?.id]);
+
+  const renderMessages = () => {
+      let lastDate = "";
+      const filteredMessages = chatSearchQuery ? messages.filter(m => m.decoded?.text?.toLowerCase().includes(chatSearchQuery.toLowerCase())) : messages;
+
+      return filteredMessages.map(m => {
+          const date = new Date(m.created_at);
+          const dateStr = formatDateHeader(m.created_at);
+          const showDate = dateStr !== lastDate;
+          lastDate = dateStr;
+          const isMe = m.sender_id === myProfile?.id;
+          const data = m.decoded || { text: "..." };
+          
+          if (data.isCall) {
+              const isMissed = data.isCall === 'missed';
+              return (
+                  <React.Fragment key={m.id}>
+                      {showDate && <div className="flex justify-center my-4 sticky top-0 z-0"><span className="bg-black/40 text-xs px-3 py-1 rounded-full text-zinc-400 backdrop-blur-sm border border-white/5">{dateStr}</span></div>}
+                      <motion.div layout id={"msg-" + m.id} initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`flex justify-${isMe ? 'end' : 'start'} my-2`}>
+                          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-blue-600/20 text-blue-100 rounded-tr-none' : 'bg-zinc-800 text-zinc-200 rounded-tl-none'}`}>
+                              <div className={`p-2 rounded-full ${isMissed ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'}`}>
+                                  <Phone size={18} className={isMissed ? 'rotate-[135deg]' : ''}></Phone>
+                              </div>
+                              <div>
+                                  <div className="text-[15px] font-bold">{data.text}</div>
+                                  <div className="text-[11px] opacity-60 flex items-center gap-1 mt-0.5 font-medium">
+                                      {isMissed ? <CornerUpLeft size={12}></CornerUpLeft> : <CornerUpLeft size={12} className={isMe ? '' : 'rotate-180'}></CornerUpLeft>}
+                                      {date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                                  </div>
+                              </div>
+                          </div>
+                      </motion.div>
+                  </React.Fragment>
+              );
+          }
+
+          if (data.isSystem) {
+              return (
+                  <React.Fragment key={m.id}>
+                      {showDate && <div className="flex justify-center my-4 sticky top-0 z-0"><span className="bg-black/40 text-xs px-3 py-1 rounded-full text-zinc-400 backdrop-blur-sm border border-white/5">{dateStr}</span></div>}
+                      <motion.div layout id={"msg-" + m.id} initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} className="flex justify-center my-2">
+                          <div className="bg-white/10 text-zinc-300 text-[11px] font-medium px-4 py-1.5 rounded-full backdrop-blur-md shadow-inner border border-white/5 flex items-center gap-2">
+                              {data.file && <img src={data.file.url} className="w-5 h-5 rounded-full object-cover"></img>}
+                              {data.text}
+                          </div>
+                      </motion.div>
+                  </React.Fragment>
+              );
+          }
+
+          const senderProf = getSenderProfile(m.sender_id, m.sender_profile);
+          
+          return (
+              <React.Fragment key={m.id}>
+                  {showDate && <div className="flex justify-center my-4 sticky top-0 z-0"><span className="bg-black/40 text-xs px-3 py-1 rounded-full text-zinc-400 backdrop-blur-sm border border-white/5">{dateStr}</span></div>}
+                  <MessageBubble
+                      message={m}
+                      isMe={isMe}
+                      activeRoom={activeRoom}
+                      senderProf={senderProf}
+                      date={date}
+                      selectionMode={selectionMode}
+                      selectedIds={selectedIds}
+                      toggleSelection={toggleSelection}
+                      handleContextMenu={handleContextMenu}
+                      setLightboxSrc={setLightboxSrc}
+                      setShowProfileModal={setShowProfileModal}
+                      handleReaction={(emoji) => handleReactionForMessage(m, emoji)}
+                      getDisplayName={getDisplayName}
+                  />
+              </React.Fragment>
+          );
+      });
+  };
+
+  if (myProfile?.is_banned) {
+      return (
+          <div className="flex h-screen bg-[#050505] text-white items-center justify-center font-sans">
+              <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                  <Ghost size={80} className="text-zinc-700 mb-6 animate-bounce" />
+                  <h1 className="text-6xl font-black text-zinc-600 mb-2 tracking-tighter">404</h1>
+                  <p className="text-zinc-500 font-medium tracking-widest uppercase mb-8">Аккаунт удален</p>
+                  <button onClick={()=>{localStorage.removeItem('aperture_user_id'); window.location.reload();}} className="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors font-medium">Выйти</button>
+              </div>
+          </div>
+      );
+  }
+
+  if (step === 'auth') return <>{renderToasts()}<AuthLayout>
+      <LiquidGlass className="p-10 w-full max-w-md text-center">
+        <LogoIcon className="w-12 h-12 text-blue-500 mx-auto mb-6"></LogoIcon>
+        <h2 className="text-3xl font-bold mb-2">Добро пожаловать</h2>
+        <p className="text-zinc-400 text-sm mb-8">Введите токен для доступа к закрытой сети</p>
+        <input value={inviteToken} onChange={e=>setInviteToken(e.target.value)} placeholder="Токен доступа" className="w-full bg-black/40 border border-white/10 rounded-xl p-4 mb-6 text-center uppercase font-mono tracking-widest text-lg outline-none focus:border-blue-500 transition-colors"></input>
+        <button onClick={handleAuthCheck} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition-all transform hover:scale-[1.02] shadow-lg shadow-blue-500/20">{loading?<Loader2 className="animate-spin mx-auto"></Loader2>:"Продолжить"}</button>
+      </LiquidGlass>
+  </AuthLayout></>;
+
+  if (step === 'login') return <>{renderToasts()}<AuthLayout>
+      <LiquidGlass className="p-10 w-full max-w-md text-center">
+        <h2 className="text-3xl font-bold mb-2">С возвращением!</h2>
+        <p className="text-zinc-400 text-sm mb-8">Введите ваш пароль для входа в профиль</p>
+        <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} placeholder="Пароль" className="w-full bg-black/40 border border-white/10 rounded-xl p-4 mb-6 text-center outline-none focus:border-blue-500 transition-colors"></input>
+        <button onClick={handleLogin} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition-all transform hover:scale-[1.02] shadow-lg shadow-blue-500/20">{loading?<Loader2 className="animate-spin mx-auto"></Loader2>:"Войти"}</button>
+      </LiquidGlass>
+  </AuthLayout></>;
+
+  if (step === 'setup') return <>{renderToasts()}<AuthLayout hideRight>
+      <LiquidGlass className="w-full max-w-md p-10">
+        <h2 className="text-3xl font-bold text-center mb-2">Создание профиля</h2>
+        <p className="text-zinc-400 text-sm text-center mb-8">Заполните данные для начала общения</p>
+        <div className="flex justify-center mb-6">
+            <div onClick={()=>fileInputRef.current?.click()} className="w-28 h-28 rounded-full bg-black/40 flex items-center justify-center overflow-hidden cursor-pointer border border-white/10 hover:border-blue-500 transition-colors group relative">
+                {formAvatarPreview?<img src={formAvatarPreview} className="w-full h-full object-cover"></img>:<Camera size={32} className="text-zinc-500 group-hover:text-blue-500 transition-colors"></Camera>}
+            </div>
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+        </div>
+        <input value={formName} onChange={e=>setFormName(e.target.value)} placeholder="Имя" className="w-full bg-black/40 border border-white/10 rounded-xl p-4 mb-4 outline-none focus:border-blue-500 transition-colors"></input>
+        <div className="relative mb-6">
+            <input value={formUsername} onChange={e=>checkUsername(e.target.value.replace(new RegExp('[^a-zA-Z0-9_]', 'g'), ''))} placeholder="username" className={"w-full bg-black/40 border rounded-xl p-4 outline-none transition-colors " + (userStatus==='taken'?'border-red-500':'border-white/10 focus:border-blue-500')}></input>
+            {userStatus === 'taken' && <span className="absolute right-4 top-4 text-xs text-red-500 font-bold">Занят</span>}
+            {userStatus === 'available' && <Check size={20} className="absolute right-4 top-4 text-green-500"></Check>}
+        </div>
+        <button onClick={handleRegister} className="w-full bg-white hover:bg-zinc-200 text-black font-bold py-4 rounded-xl transition-all transform hover:scale-[1.02]">Создать аккаунт</button>
+      </LiquidGlass>
+  </AuthLayout></>;
+
+  if (step === 'success') return <>{renderToasts()}<AuthLayout hideRight>
+      <LiquidGlass className="p-10 w-full max-w-md text-center">
+        <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6"><Check size={40}></Check></div>
+        <h2 className="text-3xl font-bold mb-4">Отлично!</h2>
+        <p className="text-zinc-400 text-sm mb-6">Обязательно сохраните этот пароль, он понадобится для входа с других устройств:</p>
+        <div className="bg-black/40 p-5 rounded-xl font-mono text-2xl tracking-widest mb-8 select-all border border-white/10 text-blue-400">{generatedPassword}</div>
+        <button onClick={()=>setStep('chat')} className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition-all transform hover:scale-[1.02] shadow-lg shadow-blue-500/20">Начать общение</button>
+      </LiquidGlass>
+  </AuthLayout></>;
+
+  const roomTypeNameText = activeRoom?.type === 'channel' ? 'канал' : (activeRoom?.type === 'group' ? 'группу' : 'чат');
+
+  return (
+    <div className="h-screen w-full bg-[#0f0f0f] text-white flex overflow-hidden font-sans" onClick={closeMenu}>
+      {renderToasts()}
+      
+      <AnimatePresence>
+        {showChannelWizard && (
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <LiquidGlass className="p-8 w-full max-w-sm" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Создать канал</h3>
+                    {channelStep === 1 ? (
+                        <>
+                            <div className="flex justify-center mb-6">
+                                <div onClick={()=>channelAvatarRef.current?.click()} className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center overflow-hidden cursor-pointer border border-white/10 hover:border-blue-500 transition-colors">
+                                    {formAvatarPreview ? <img src={formAvatarPreview} className="w-full h-full object-cover"></img> : <Camera></Camera>}
+                                </div>
+                                <input type="file" accept="image/*" ref={channelAvatarRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+                            </div>
+                            <input value={channelData.title} onChange={e=>setChannelData({...channelData, title:e.target.value})} placeholder="Название канала" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-3 outline-none focus:border-blue-500 transition-colors"></input>
+                            <textarea value={channelData.desc} onChange={e=>setChannelData({...channelData, desc:e.target.value})} placeholder="Описание" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-4 outline-none h-20 resize-none focus:border-blue-500 transition-colors"></textarea>
+                            <button onClick={()=>setChannelStep(2)} disabled={!channelData.title} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold disabled:opacity-50 transition-colors">Далее</button>
+                        </>
+                    ) : (
+                        <>
+                                <div className="flex gap-2 mt-4">
+                                    <button onClick={()=>setShowLeftProfileEdit(false)} className="flex-1 py-2 rounded-xl text-zinc-400 hover:text-white transition-colors">Отмена</button>
+                                    <button onClick={handleUpdateProfileLeft} className="flex-1 py-2 bg-blue-600 rounded-xl text-white">Сохранить</button>
+                                </div>
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+                            {channelData.type==='public' && (
+                                <div className="mb-4">
+                                    <div className="relative"><span className="absolute left-3 top-3 text-zinc-500">t.me/</span><input value={channelData.slug} onChange={e=>checkChannelSlug(e.target.value.replace(new RegExp('[^a-zA-Z0-9_]', 'g'), ''))} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-14 pr-3 outline-none focus:border-blue-500 transition-colors"></input></div>
+                                    {userStatus==='taken' && <p className="text-red-500 text-xs mt-1">Занято</p>}
+                                </div>
+                            )}
+                            <button onClick={handleCreateChannel} disabled={loading || (channelData.type==='public' && userStatus!=='available')} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold disabled:opacity-50 transition-colors">Создать</button>
+                        </>
+                    )}
+                    <button onClick={()=>{setShowChannelWizard(false); setChannelStep(1); setFormAvatarPreview(null); setFormAvatarFile(null);}} className="mt-3 w-full text-zinc-500 hover:text-white text-sm transition-colors">Отмена</button>
+                </LiquidGlass>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showGroupWizard && (
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <LiquidGlass className="p-8 w-full max-w-sm h-[550px] flex flex-col" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Создать группу</h3>
+                    {wizardStep === 1 ? (
+                        <>
+                            <div className="flex justify-center mb-6">
+                                <div onClick={()=>groupAvatarRef.current?.click()} className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center overflow-hidden cursor-pointer border border-white/10 relative group hover:border-blue-500 transition-colors shadow-lg">
+                                    {formAvatarPreview ? <img src={formAvatarPreview} className="w-full h-full object-cover"></img> : <Camera className="text-zinc-500"></Camera>}
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><Camera size={24}></Camera></div>
+                                </div>
+                                <input type="file" accept="image/*" ref={groupAvatarRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+                            </div>
+                            <input value={createData.title} onChange={e=>setCreateData({...createData, title:e.target.value})} placeholder="Название группы" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-3 outline-none focus:border-blue-500 transition-colors"></input>
+                            <textarea value={createData.desc} onChange={e=>setCreateData({...createData, desc:e.target.value})} placeholder="Описание (опционально)" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-3 outline-none h-24 resize-none focus:border-blue-500 transition-colors"></textarea>
+                            <button onClick={()=>setWizardStep(2)} disabled={!createData.title} className="w-full bg-blue-600 py-3 rounded-xl font-bold disabled:opacity-50 mt-auto hover:bg-blue-500 transition-colors">Далее</button>
+                        </>
+                    ) : (
+                        <>
+                            <input value={userSearchQuery} onChange={e=>searchUsersForGroup(e.target.value)} placeholder="Добавить участников..." className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-3 outline-none focus:border-blue-500/50 transition-colors"></input>
+                            
+                            {(()=>{
+                                const displayUsers = userSearchQuery.trim() ? userSearchResults : contacts.map(c=>c.profile).filter(Boolean) as Profile[];
+                                return (
+                                    <div className="flex-1 overflow-y-auto mb-4 custom-scrollbar space-y-1 pr-1">
+                                        {displayUsers.map(u => (
+                                            <div key={u.id} onClick={()=>{
+                                                if(selectedUsers.find(su=>su.id===u.id)) setSelectedUsers(p=>p.filter(su=>su.id!==u.id));
+                                                else setSelectedUsers(p=>[...p, u]);
+                                            }} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
+                                                <div className={"w-5 h-5 border rounded-full flex items-center justify-center transition-colors " + (selectedUsers.find(su=>su.id===u.id) ? 'bg-blue-600 border-blue-600' : 'border-zinc-600')}>{selectedUsers.find(su=>su.id===u.id) && <Check size={12}></Check>}</div>
+                                                <ProfileAvatar prof={u} className="w-10 h-10" />
+                                                <div className="min-w-0"><div className="font-bold text-sm truncate flex items-center gap-1">{getDisplayName(u)} <StatusBadge status={u.custom_status} color={u.custom_status_color} size={12}></StatusBadge></div><div className="text-xs text-zinc-500 truncate">@{u.username}</div></div>
+                                            </div>
+                                        ))}
+                                        {displayUsers.length === 0 && <p className="text-center text-zinc-500 text-sm mt-4">{userSearchQuery.trim() ? "Ничего не найдено" : "У вас пока нет контактов"}</p>}
+                                    </div>
+                                );
+                            })()}
+                            
+                            <div className="text-xs text-zinc-500 mb-2 px-1">Выбрано участников: {selectedUsers.length}</div>
+                            <button onClick={handleCreateGroup} disabled={loading} className="w-full bg-blue-600 py-3 rounded-xl font-bold disabled:opacity-50 hover:bg-blue-500 transition-colors">{loading ? <Loader2 className="animate-spin mx-auto"></Loader2> : "Создать группу"}</button>
+                        </>
+                    )}
+                    <button onClick={()=>{setShowGroupWizard(false); setWizardStep(1); setSelectedUsers([]); setCreateData({title:'', desc:'', type:'private', slug:''}); setFormAvatarPreview(null); setFormAvatarFile(null);}} className="mt-3 w-full text-zinc-500 text-sm hover:text-white transition-colors">Отмена</button>
+                </LiquidGlass>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAddMemberModal && (
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <LiquidGlass className="p-8 w-full max-w-sm h-[400px] flex flex-col" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4">Добавить участника</h3>
+                    <input value={userSearchQuery} onChange={e=>searchUsersForGroup(e.target.value)} placeholder="Поиск людей..." className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-3 outline-none"></input>
+                    
+                    {(()=>{
+                        const displayUsers = userSearchQuery.trim() ? userSearchResults : contacts.map(c=>c.profile).filter(Boolean) as Profile[];
+                        return (
+                            <div className="flex-1 overflow-y-auto mb-4 custom-scrollbar pr-1 space-y-1">
+                                {displayUsers.map(u => (
+                                    <div key={u.id} onClick={()=>handleAddMember(u)} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
+                                        <ProfileAvatar prof={u} className="w-10 h-10" />
+                                        <div className="min-w-0"><div className="font-bold text-sm truncate flex items-center gap-1">{getDisplayName(u)} <StatusBadge status={u.custom_status} color={u.custom_status_color} size={12}></StatusBadge></div><div className="text-xs text-zinc-500 truncate">@{u.username}</div></div>
+                                    </div>
+                                ))}
+                                {displayUsers.length === 0 && <p className="text-center text-zinc-500 text-sm mt-4">{userSearchQuery.trim() ? "Ничего не найдено" : "У вас пока нет контактов"}</p>}
+                            </div>
+                        );
+                    })()}
+
+                    <button onClick={()=>setShowAddMemberModal(false)} className="mt-2 w-full text-zinc-500 hover:text-white transition-colors text-sm">Отмена</button>
+                </LiquidGlass>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDeleteChatModal && (
+          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+             <LiquidGlass className="p-8 w-full max-w-sm" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                <h3 className="text-lg font-bold mb-2">Удалить {roomTypeNameText}?</h3>
+                {activeRoom?.type === 'private' && (
+                    <div className="flex items-center gap-3 mb-6 p-3 bg-white/5 rounded-xl cursor-pointer" onClick={()=>setDeleteForEveryone(!deleteForEveryone)}>
+                        <div className={"w-5 h-5 border rounded flex items-center justify-center " + (deleteForEveryone ? 'bg-red-500 border-red-500' : 'border-zinc-600')}>{deleteForEveryone && <Check size={14}></Check>}</div><span className="text-sm">Удалить для всех</span>
+                    </div>
+                )}
+                <div className="flex gap-3"><button onClick={()=>setShowDeleteChatModal(false)} className="flex-1 py-3 hover:bg-white/5 rounded-xl font-bold text-sm transition-colors">Отмена</button><button onClick={handleDeleteChat} className="flex-1 py-3 bg-red-500/20 text-red-500 hover:bg-red-500/40 rounded-xl font-bold text-sm transition-colors">Удалить</button></div>
+             </LiquidGlass>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+             <LiquidGlass className="p-8 w-full max-w-md" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                <button onClick={()=>setShowSettings(false)} className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full z-50 transition-colors"><X size={20}></X></button>
+                <h2 className="text-xl font-bold mb-6">Настройки</h2>
+                <div className="flex justify-center mb-6"><div onClick={()=>fileInputRef.current?.click()} className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/10 cursor-pointer relative group"><img src={formAvatarPreview||DEFAULT_AVATAR} className="w-full h-full object-cover"></img><div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={24}></Camera></div></div><input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarFileSelect} className="hidden"></input></div>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar px-1 pb-2">
+                    <div><label className="text-xs text-zinc-500 ml-2">Имя</label><input value={formName} onChange={e=>setFormName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-blue-500/50 outline-none transition-colors"></input></div>
+                    <div><label className="text-xs text-zinc-500 ml-2">Юзернейм</label><div className="relative"><input value={formUsername} onChange={e=>checkUsername(e.target.value.replace(new RegExp('[^a-zA-Z0-9_]', 'g'), ''))} className={"w-full bg-white/5 border rounded-xl py-3 px-4 outline-none transition-colors " + (userStatus==='taken'?'border-red-500/50':'border-white/10 focus:border-blue-500/50')}></input>{userStatus === 'taken' && <span className="absolute right-3 top-3.5 text-xs text-red-500 font-bold">Занят</span>}{userStatus === 'available' && <Check size={16} className="absolute right-3 top-3.5 text-green-500"></Check>}</div></div>
+                    
+                    <div>
+                        <label className="text-xs text-zinc-500 ml-2">День рождения</label>
+                        <input type="date" value={formDob} onChange={e=>setFormDob(e.target.value)} style={{colorScheme: 'dark'}} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:border-blue-500/50 outline-none transition-colors"></input>
+                    </div>
+
+                    <div><label className="text-xs text-zinc-500 ml-2">Bio</label><textarea value={formBio} onChange={e=>setFormBio(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 resize-none h-24 focus:border-blue-500/50 outline-none transition-colors"></textarea></div>
+                    
+                    <div>
+                        <label className="text-xs text-zinc-500 ml-2">Премиум Статус</label>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                            {['tie', 'tree', 'ufo', 'whale', 'cat'].map(key => {
+                                const Icon = STATUS_ICONS[key];
+                                return (
+                                    <button key={key} onClick={()=>setFormStatus(key)} className={"p-3 rounded-xl border transition-all " + (formStatus===key ? 'border-blue-500 bg-blue-500/20' : 'border-white/10 hover:bg-white/5')}>
+                                        <Icon className="w-6 h-6" style={{color: formStatus===key ? formStatusColor : 'white'}}></Icon>
+                                    </button>
+                                )
+                            })}
+                            <button onClick={()=>setFormStatus('')} className={"p-3 rounded-xl border transition-all text-xs font-bold text-zinc-400 " + (!formStatus ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-white/10 hover:bg-white/5')}>OFF</button>
+                        </div>
+                    </div>
+                    {formStatus && (
+                        <div>
+                            <label className="text-xs text-zinc-500 ml-2">Цвет иконки</label>
+                            <div className="flex gap-3 mt-2">
+                                {['#3b82f6', '#0ea5e9', '#06b6d4', '#22c55e', '#60a5fa', '#ec4899', '#ffffff'].map(c => (
+                                    <button key={c} onClick={()=>setFormStatusColor(c)} className={"w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 " + (formStatusColor===c ? 'border-white ring-2 ring-white/20' : 'border-transparent')} style={{backgroundColor: c}}></button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <button onClick={handleUpdateProfile} disabled={loading || userStatus === 'taken'} className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition-colors disabled:opacity-50 mt-4">Сохранить изменения</button>
+                </div>
+             </LiquidGlass>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showProfileModal && (
+          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={()=>setShowProfileModal(null)}>
+             <LiquidGlass className="p-0 w-full max-w-sm relative overflow-hidden" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                <button onClick={()=>setShowProfileModal(null)} className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full z-50 transition-colors"><X size={20}></X></button>
+                <div className="flex flex-col items-center pt-8 pb-4 bg-zinc-900/40">
+                    <div className="w-24 h-24 rounded-full overflow-hidden mb-3 shadow-xl relative">
+                        {iAmBlocked ? <UserX className="w-full h-full p-6 text-zinc-600 bg-zinc-800"></UserX> : <ProfileAvatar prof={showProfileModal} className="w-full h-full" />}
+                        {formatLastSeenImproved(showProfileModal.last_seen) === 'online' && !showProfileModal.is_banned && <div className="absolute bottom-1 right-1 w-4 h-4 bg-green-500 rounded-full border-[3px] border-zinc-900"></div>}
+                    </div>
+                    <h2 className="text-xl font-bold flex items-center gap-2 tracking-tight">{iAmBlocked ? "Пользователь" : getDisplayName(showProfileModal)} {showProfileModal.is_verified && <VerifiedBadge size={18}></VerifiedBadge>} <StatusBadge status={showProfileModal.custom_status} color={showProfileModal.custom_status_color} size={18}></StatusBadge></h2>
+                    <p className="text-zinc-400 text-sm">{showProfileModal.is_banned ? 'Аккаунт удален' : formatLastSeenImproved(showProfileModal.last_seen)}</p>
+                    
+                    {!iAmBlocked && !showProfileModal.is_banned && (
+                        <div className="flex justify-center gap-3 w-full px-8 mt-5">
+                            <button onClick={()=>{startChat(showProfileModal); setShowProfileModal(null);}} className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl flex flex-col items-center gap-1.5 transition-colors"><MessageSquare size={22}></MessageSquare><span className="text-[11px] font-medium">Чат</span></button>
+                            <button className="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl flex flex-col items-center gap-1.5 transition-colors"><Bell size={22}></Bell><span className="text-[11px] font-medium">Звук</span></button>
+                            {showProfileModal.id !== myProfile?.id && (
+                                <button onClick={()=>openContactModal(showProfileModal)} className={"flex-1 py-3 rounded-2xl flex flex-col items-center gap-1.5 transition-colors " + (contacts.find(c=>c.contact_id===showProfileModal.id) ? "bg-green-500/20 text-green-500" : "bg-white/5 hover:bg-white/10")}><UserPlus size={22}></UserPlus><span className="text-[11px] font-medium">Контакт</span></button>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {!iAmBlocked && !showProfileModal.is_banned && (
+                    <div className="p-6 bg-black/40 space-y-5">
+                        <div><div className="text-green-500 text-sm font-medium">@{showProfileModal.username}</div><div className="text-xs text-zinc-500 mt-1">Имя пользователя</div></div>
+                        {showProfileModal.dob && <div><div className="text-white text-sm flex items-center gap-2"><Gift size={16} className="text-zinc-400"></Gift> {formatDob(showProfileModal.dob)}</div><div className="text-xs text-zinc-500 mt-1">День рождения</div></div>}
+                        {showProfileModal.bio && <div><div className="text-white text-sm leading-relaxed">{showProfileModal.bio}</div><div className="text-xs text-zinc-500 mt-1">О себе</div></div>}
+                        <button onClick={()=>{toggleBlock(); setShowProfileModal(null);}} className={"w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors mt-2 " + (isBlocked ? 'bg-white text-black' : 'bg-red-500/10 text-red-500 hover:bg-red-500/20')}>{isBlocked ? <><Check size={18}></Check> Разблокировать</> : <><Ban size={18}></Ban> Заблокировать</>}</button>
+                    </div>
+                )}
+             </LiquidGlass>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showContactModal && (
+          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={()=>setShowContactModal(null)}>
+             <LiquidGlass className="p-6 w-full max-w-sm relative bg-[#111111]" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                <h3 className="text-[17px] font-medium mb-6 text-white">{contacts.find(c=>c.contact_id===showContactModal.id) ? "Изменить контакт" : "Добавить контакт"}</h3>
+                
+                <div className="flex items-center gap-4 mb-8">
+                    <ProfileAvatar prof={showContactModal} className="w-[60px] h-[60px]" />
+                    <div>
+                        <div className="text-white font-medium text-[15px]">@{showContactModal.username}</div>
+                        <div className="text-zinc-500 text-[13px] mt-0.5">{formatLastSeenImproved(showContactModal.last_seen)}</div>
+                    </div>
+                </div>
+
+                <div className="space-y-6 mb-8">
+                    <div className="relative">
+                        <label className="text-[11px] text-zinc-400 absolute -top-4 left-0 transition-all">Имя</label>
+                        <input value={contactFirstName} onChange={e=>setContactFirstName(e.target.value)} className="w-full bg-transparent border-b border-white/10 pb-1.5 text-[15px] outline-none focus:border-green-500 transition-colors text-white"></input>
+                    </div>
+                    <div className="relative">
+                        <label className="text-[11px] text-zinc-400 absolute -top-4 left-0 transition-all">Фамилия</label>
+                        <input value={contactLastName} onChange={e=>setContactLastName(e.target.value)} className="w-full bg-transparent border-b border-white/10 pb-1.5 text-[15px] outline-none focus:border-green-500 transition-colors text-white"></input>
+                    </div>
+                </div>
+
+                <div className="bg-[#1a1a1a] -mx-6 px-6 py-5 mb-2 border-y border-white/5">
+                    <div className="relative">
+                        <input value={contactNote} onChange={e=>setContactNote(e.target.value)} placeholder="Заметка" className="w-full bg-transparent border-b border-white/10 pb-1.5 text-[15px] outline-none focus:border-green-500 transition-colors text-white"></input>
+                    </div>
+                    <p className="text-[11px] text-zinc-500 mt-2">Заметку видите только Вы.</p>
+                </div>
+
+                {contacts.find(c=>c.contact_id===showContactModal.id) && (
+                    <div className="mt-4 mb-8 bg-[#1a1a1a] -mx-6 px-6 py-3 border-y border-white/5">
+                        <button onClick={handleDeleteContact} className="text-red-400 hover:text-red-300 text-[15px] transition-colors w-full text-left">Удалить контакт</button>
+                    </div>
+                )}
+
+                <div className="flex justify-end gap-4 mt-2">
+                    <button onClick={()=>setShowContactModal(null)} className="px-4 py-2 hover:bg-white/5 rounded-md font-medium text-[15px] text-green-500 transition-colors">Отмена</button>
+                    <button onClick={handleSaveContact} className="px-4 py-2 hover:bg-white/5 rounded-md font-medium text-[15px] text-green-500 transition-colors">Готово</button>
+                </div>
+             </LiquidGlass>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showReportModal && (
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <LiquidGlass className="p-8 w-full max-w-sm" onClick={(e: React.MouseEvent)=>e.stopPropagation()}>
+                    <h3 className="text-lg font-bold mb-4">Пожаловаться</h3>
+                    <div className="space-y-2 mb-4">
+                        {["Спам", "Насилие", "Порнография", "Другое"].map(r => (
+                            <button key={r} onClick={()=>setReportReason(r)} className={"w-full text-left p-3 rounded-xl transition-colors " + (reportReason===r ? 'bg-red-600 text-white font-bold' : 'bg-white/5 hover:bg-white/10')}>{r}</button>
+                        ))}
+                    </div>
+                    <textarea value={reportComment} onChange={e=>setReportComment(e.target.value)} placeholder="Дополнительные детали..." className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mb-6 h-24 resize-none outline-none focus:border-red-500/50 transition-colors"></textarea>
+                    <div className="flex gap-3">
+                        <button onClick={()=>setShowReportModal(null)} className="flex-1 py-3 text-zinc-400 hover:text-white font-bold text-sm transition-colors">Отмена</button>
+                        <button onClick={handleReport} disabled={!reportReason} className="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-bold text-sm disabled:opacity-50 transition-colors">Отправить</button>
+                    </div>
+                </LiquidGlass>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+          {lightboxSrc && <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-10" onClick={()=>setLightboxSrc(null)}>{lightboxSrc.type==='image' ? <img src={lightboxSrc.url} className="max-w-full max-h-full rounded-md shadow-2xl object-contain"></img> : <video src={lightboxSrc.url} controls autoPlay className="max-w-full max-h-full"></video>}<button className="absolute top-5 right-5 p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X></X></button></motion.div>}
+      </AnimatePresence>
+
+      {contextMenu && (
+          <div className="fixed z-[9999] premium-glass border border-white/10 w-52 py-1 shadow-2xl flex flex-col max-h-[70vh] overflow-y-auto" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, borderRadius: '16px' }} onClick={e=>e.stopPropagation()}>
+              <button onClick={handleReply} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><CornerUpLeft size={16}></CornerUpLeft> Ответить</button>
+              <button onClick={handleCopyText} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Copy size={16}></Copy> Копировать текст</button>
+              {activeRoom?.pinned_message_id === contextMenu.msg.id ? (
+                <button onClick={async ()=>{ await handleUnpin(); closeMenu(); }} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Pin size={16}></Pin> Открепить</button>
+              ) : (
+                <button onClick={async ()=>{ await handlePin(); closeMenu(); }} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Pin size={16}></Pin> Закрепить</button>
+              )}
+              <button onClick={()=>{ setForwardMessage(contextMenu.msg); closeMenu(); }} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Send size={16}></Send> Переслать</button>
+              <button onClick={()=>{setSelectionMode(true); setSelectedIds(new Set([contextMenu.msg.id])); closeMenu();}} className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><CheckSquare size={16}></CheckSquare> Выбрать</button>
+
+              {(contextMenu.msg.sender_id === myProfile?.id || (activeRoom?.type !== 'private' && activeRoom?.owner_id === myProfile?.id) || myProfile?.id === ADMIN_UUID) && (
+                  <>
+                      <div className="h-[1px] bg-white/10 my-1"></div>
+                      <button onClick={()=>{ handleDeleteMessage(); closeMenu(); }} className="w-full text-left px-4 py-2.5 hover:bg-red-500/20 text-red-400 flex items-center gap-3 text-sm transition-colors"><Trash2 size={16}></Trash2> Удалить</button>
+                  </>
+              )}
+          </div>
+      )}
+
+      {forwardMessage && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60" onClick={()=>{ setForwardMessage(null); setForwardSearch(''); setForwardTab('all'); }}>
+              <div className="bg-[#0b0c0d] border border-white/8 rounded-xl w-[420px] max-w-[95%] p-4 shadow-2xl" onClick={e=>e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-3">
+                      <div className="text-lg font-semibold">Переслать...</div>
+                      <button onClick={()=>{ setForwardMessage(null); setForwardSearch(''); setForwardTab('all'); }} className="p-2 rounded hover:bg-white/5"><X /></button>
+                  </div>
+
+                  <div className="mb-3">
+                      <div className="flex items-center bg-white/5 rounded-lg px-3 py-2 border border-white/6">
+                          <SearchIcon className="w-4 h-4 text-zinc-400 mr-2" />
+                          <input value={forwardSearch} onChange={e=>setForwardSearch(e.target.value)} placeholder="Поиск" className="bg-transparent outline-none text-sm text-white placeholder-zinc-500 w-full" />
+                      </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-3 text-sm text-white/70">
+                      {['all','private','bots','channels','groups'].map(tab => (
+                          <button key={tab} onClick={()=>setForwardTab(tab as any)} className={`px-2 py-1 rounded-md ${forwardTab===tab ? 'bg-green-600/10 text-green-400 border-b-2 border-green-400' : 'hover:bg-white/5'}`}>
+                              {tab === 'all' ? 'Все' : tab === 'private' ? 'лс' : tab === 'bots' ? 'Боты' : tab === 'channels' ? 'Каналы' : 'Группы'}
+                          </button>
+                      ))}
+                  </div>
+
+                  <div className="max-h-[56vh] overflow-auto custom-scrollbar">
+                      {/* Избранное */}
+                      <div className="mb-2">
+                          <button onClick={async ()=>{ const favRoom = rooms.find(r=>r.id===myProfile?.id) || null; /* keep behaviour: self-chat likely exists */ if (activeRoom && myProfile) { /* try find self-room */ const self = rooms.find(rr => rr.owner_id === myProfile.id && rr.type === 'private') || rooms.find(rr => rr.id === myProfile.id); if (self) { await forwardToRoom(self.id); } } }} className="w-full flex items-center gap-3 p-3 bg-gradient-to-r from-green-600/6 to-transparent rounded-lg hover:from-green-600/8">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-lg">★</div>
+                              <div className="flex-1 text-left">
+                                  <div className="font-medium text-white">Избранное</div>
+                                  <div className="text-[12px] text-white/60">Сохранить на память</div>
+                              </div>
+                          </button>
+                      </div>
+
+                      {/* Список чатов */}
+                      {rooms.filter(r => {
+                          if (forwardSearch && !( (r.title||'').toLowerCase().includes(forwardSearch.toLowerCase()) || (r.other_user?.display_name||'').toLowerCase().includes(forwardSearch.toLowerCase()) )) return false;
+                          if (forwardTab === 'private') return r.type === 'private';
+                          if (forwardTab === 'channels') return r.type === 'channel';
+                          if (forwardTab === 'groups') return r.type === 'group';
+                          if (forwardTab === 'bots') return (r.other_user?.username||'').toLowerCase().includes('bot');
+                          return true;
+                      }).map(r => (
+                          <button key={r.id} onClick={async ()=>{ await forwardToRoom(r.id); }} className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg text-left">
+                              <img src={r.avatar_url || DEFAULT_AVATAR} className="w-10 h-10 rounded-full object-cover" />
+                              <div className="flex-1">
+                                  <div className="font-medium text-white truncate">{r.title || (r.other_user ? getDisplayName(r.other_user) : r.slug || 'Чат')}</div>
+                                  <div className="text-[12px] text-white/60 truncate">{r.last_message_preview || (r.other_user ? (r.other_user.last_seen ? formatLastSeenImproved(r.other_user.last_seen) : '') : '')}</div>
+                              </div>
+                              <div className="text-[12px] text-white/60">{r.unread_count? r.unread_count : ''}</div>
+                          </button>
+                      ))}
+                  </div>
+
+                  <div className="mt-3 flex justify-end">
+                      <button onClick={()=>{ setForwardMessage(null); setForwardSearch(''); setForwardTab('all'); }} className="px-4 py-2 rounded-md bg-white/5 hover:bg-white/8">Отмена</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+            <div className={"w-full md:w-[380px] border-r border-white/10 flex flex-col bg-[#212121] " + (activeRoom ? 'hidden md:flex' : 'flex')}>
+                {/* Top bar: menu + compact search */}
+                <div className="p-3 flex items-center gap-3 border-b border-white/5 bg-[#212121] relative z-50">
+                    <button aria-label="Main menu" onClick={() => setIsMainMenuOpen(v => !v)} className="p-2 rounded-md hover:bg-white/5 transition-colors">
+                        <Menu size={20} className="text-blue-500" />
+                    </button>
+
+                    <div className="flex-1">
+                        <div className="flex items-center bg-white/5 rounded-xl px-3 py-2 border border-white/10 focus-within:border-blue-500 transition-colors">
+                            <SearchIcon className="w-4 h-4 text-zinc-400 mr-2" />
+                            <input
+                                value={searchQuery}
+                                onChange={e => onSearch(e.target.value)}
+                                onFocus={() => { setIsChatSearchOpen(true); }}
+                                placeholder="Поиск"
+                                className="bg-transparent p-0 text-sm w-full outline-none text-white placeholder-zinc-500"
+                            />
+                        </div>
+                    </div>
+
+                    <AnimatePresence>
+                        {isMainMenuOpen && (
+                            <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute left-3 top-14 z-60 w-72 bg-[#111111] rounded-2xl shadow-2xl border border-white/10 overflow-visible backdrop-blur-sm">
+                                <div className="px-4 py-3 flex items-center gap-3 cursor-default">
+                                    <img src={myProfile?.avatar_url || DEFAULT_AVATAR} className="w-11 h-11 rounded-full object-cover" />
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-sm text-white truncate">{myProfile?.display_name}</div>
+                                        <div className="text-xs text-zinc-400 flex items-center gap-2"><StatusBadge status={myProfile?.custom_status} color={myProfile?.custom_status_color} size={12} /> <span className="truncate">{formatLastSeenImproved(myProfile?.last_seen)}</span></div>
+                                    </div>
+                                </div>
+                                <div className="h-px bg-white/5"></div>
+                                <button onClick={() => { setIsMainMenuOpen(false); if (myProfile) startChat(myProfile); }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm text-white"><BookOpen size={16} className="text-blue-500"/> Избранное</button>
+                                <button onClick={() => { setIsMainMenuOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm text-white"><Archive size={16} className="text-blue-500"/> Архивные чаты</button>
+                                <button onClick={() => { setIsMainMenuOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm text-white"><Users size={16} className="text-blue-500"/> Контакты</button>
+                                <div className="h-px bg-white/5"></div>
+                                <button onClick={() => { setShowLeftSettings(true); setIsMainMenuOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm text-white"><Settings size={16} className="text-blue-500"/> Настройки</button>
+                                <div className="relative">
+                                    <button onMouseEnter={() => setIsMoreOpen(true)} onMouseLeave={() => setTimeout(()=>setIsMoreOpen(false), 100)} onClick={() => { setIsMainMenuOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 text-sm text-white"><MoreVertical size={16} className="text-blue-500"/> Больше &gt;</button>
+                                    {isMoreOpen && (
+                                        <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -6 }} className="absolute left-full top-0 ml-3 w-56 bg-[#111111] rounded-2xl shadow-2xl border border-white/10 p-2 z-70">
+                                                    <button className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-3 text-sm text-white">Ночная тема</button>
+                                                    <button className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-3 text-sm text-white">Анимации</button>
+                                            <div className="h-px bg-white/5 my-1"></div>
+                                            <button className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-3 text-sm text-white">Функции Telegram</button>
+                                            <button className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-3 text-sm text-white">Сообщить об ошибке</button>
+                                        </motion.div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Search area */}
+                <div className="px-3 py-2">
+                    {isChatSearchOpen && (
+                        <div className="space-y-3">
+                            <div>
+                                <div className="text-xs text-blue-500 font-bold">Недавние</div>
+                                <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+                                    {rooms.slice(0, 5).map(r => (
+                                        <button key={r.id} onClick={() => { setActiveRoom(r); setIsChatSearchOpen(false); }} className="flex flex-col items-center w-14 text-center">
+                                            <img src={r.avatar_url || DEFAULT_AVATAR} className="w-10 h-10 rounded-full object-cover border border-white/10" />
+                                            <div className="text-[11px] text-white truncate mt-1">{r.title || r.other_user?.display_name}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-xs text-blue-500 font-bold">Результаты</div>
+                                <div className="mt-2 space-y-2">
+                                    {searchResults.map(res => (
+                                        <button key={res.id} onClick={() => handleSearchResultClick(res)} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 rounded-xl text-white">
+                                            <img src={res.avatar_url || DEFAULT_AVATAR} className="w-8 h-8 rounded-full" />
+                                            <div className="min-w-0 text-sm truncate">{res.title || res.display_name || res.username}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-2 custom-scrollbar">
+                    {showLeftSettings ? (
+                        showLeftProfileEdit ? (
+                            <div className="px-4 py-4 relative">
+                                <button onClick={()=>{ setShowLeftSettings(false); setShowLeftProfileEdit(false); }} className="absolute top-3 right-3 p-2 hover:bg-white/5 rounded-full transition-colors"><X size={18} /></button>
+                                <div className="flex items-center gap-4">
+                                    <div onClick={()=>fileInputRef.current?.click()} className="w-24 h-24 rounded-full overflow-hidden border border-white/10 cursor-pointer relative group">
+                                        <img src={formAvatarPreview || myProfile?.avatar_url || DEFAULT_AVATAR} className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <div className="w-12 h-12 bg-black/40 rounded-full flex items-center justify-center border border-white/10"><Camera size={22} /></div>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-lg truncate">Изменить профиль</div>
+                                        <div className="text-sm text-zinc-400 mt-1">@{myProfile?.username}</div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 space-y-3">
+                                    <div>
+                                        <label className="text-xs text-zinc-400">Имя (обязательно)</label>
+                                        <input value={formName} onChange={e=>setFormName(e.target.value)} className="w-full bg-transparent border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-blue-500/50 transition-colors" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-400">Фамилия (необязательно)</label>
+                                        <input value={contactLastName} onChange={e=>setContactLastName(e.target.value)} className="w-full bg-transparent border border-white/10 rounded-xl py-2 px-3 outline-none transition-colors" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-400">О себе</label>
+                                        <textarea value={formBio} onChange={e=>setFormBio(e.target.value)} className="w-full bg-transparent border border-white/10 rounded-xl py-2 px-3 h-28 resize-none outline-none transition-colors"></textarea>
+                                        <div className="text-xs text-zinc-500 mt-1">Любые подробности, например: возраст, род занятий или город. Пример: 23 года, дизайнер из Санкт-Петербурга.</div>
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center justify-between"><label className="text-xs text-zinc-400">День рождения</label><div className="text-xs text-zinc-500">{formDob ? new Date(formDob).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : ''}</div></div>
+                                        <input type="date" value={formDob} onChange={e=>setFormDob(e.target.value)} className="w-full bg-transparent border border-white/10 rounded-xl py-2 px-3 outline-none transition-colors mt-2" />
+                                        <div className="text-xs text-zinc-500 mt-2">Вы можете выбрать, кто будет видеть Ваш день рождения, в настройках &gt;.</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-400 ml-2">Имя пользователя</label>
+                                        <input value={formUsername} onChange={e=>checkUsername(e.target.value.replace(new RegExp('[^a-zA-Z0-9_]','g'),''))} className="w-full bg-transparent border border-white/10 rounded-xl py-2 px-3 outline-none transition-colors mt-2" />
+                                        <div className="text-xs text-zinc-500 mt-2">Вы можете выбрать публичное имя пользователя. Это имя позволит другим найти вас и связаться без номера телефона. Разрешены символы a–z, 0–9 и подчёркивания. Минимальная длина — 5 символов.</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-400 ml-2">Премиум статус</label>
+                                        <div className="flex gap-2 mt-2">
+                                            {['tie','tree','ufo','whale','cat'].map(k=>{ const Icon=STATUS_ICONS[k]; return (<button key={k} onClick={()=>setFormStatus(k)} className={"p-3 rounded-xl border "+(formStatus===k? 'border-blue-500 bg-blue-500/20':'border-white/10 hover:bg-white/5') }><Icon className="w-6 h-6" style={{color: formStatus===k ? formStatusColor : 'white'}} /></button>); })}
+                                            <button onClick={()=>setFormStatus('')} className={"p-3 rounded-xl border text-xs font-bold text-zinc-400 "+(!formStatus ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-white/10 hover:bg-white/5')}>OFF</button>
+                                        </div>
+                                        {formStatus && (<div className="mt-2"><label className="text-xs text-zinc-400 ml-2">Цвет</label><div className="flex gap-2 mt-2">{['#3b82f6','#0ea5e9','#06b6d4','#22c55e','#ec4899','#ffffff'].map(c=>(<button key={c} onClick={()=>setFormStatusColor(c)} className={"w-8 h-8 rounded-full "+(formStatusColor===c? 'ring-2 ring-white/20':'border border-white/10')} style={{backgroundColor:c}}></button>))}</div></div>)}
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button onClick={()=>setShowLeftProfileEdit(false)} className="flex-1 py-2 rounded-xl text-zinc-400 hover:text-white transition-colors">Отмена</button>
+                                    <button onClick={handleUpdateProfileLeft} className="flex-1 py-2 bg-blue-600 rounded-xl text-white">Сохранить</button>
+                                </div>
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+                            </div>
+                        ) : (
+                        <div className="px-4 py-4 relative">
+                            <button onClick={()=>{ setShowLeftSettings(false); setShowLeftProfileEdit(false); }} className="absolute top-3 right-3 p-2 hover:bg-white/5 rounded-full transition-colors"><X size={18} /></button>
+                            <div className="flex items-center gap-4">
+                                <img src={myProfile?.avatar_url || DEFAULT_AVATAR} className="w-20 h-20 rounded-full object-cover border border-white/10" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-lg truncate">{myProfile?.display_name}</div>
+                                    <div className="text-sm text-zinc-400 mt-1">@{myProfile?.username}</div>
+                                    <div className="text-xs text-zinc-500 mt-2">{formatLastSeenImproved(myProfile?.last_seen)}</div>
+                                </div>
+                                <div className="flex-shrink-0">
+                                    <button onClick={() => openLeftProfileEdit()} className="px-3 py-1.5 bg-blue-600 rounded-md text-sm">Редактировать</button>
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-white/5 my-4"></div>
+
+                            <div className="space-y-2">
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Settings size={16} className="text-zinc-300"/> Общие</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Play size={16} className="text-zinc-300"/> Анимации и производительность</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Bell size={16} className="text-zinc-300"/> Уведомления</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><FileIcon size={16} className="text-zinc-300"/> Данные и хранилище</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><UserX size={16} className="text-zinc-300"/> Приватность и безопасность</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><BookOpen size={16} className="text-zinc-300"/> Папки чатов</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Users size={16} className="text-zinc-300"/> Активные сессии</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Flag size={16} className="text-zinc-300"/> Язык</div><div className="text-zinc-400">Русский</div></button>
+                                <button className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-white/5 rounded-md text-white text-sm"><div className="flex items-center gap-3"><Smile size={16} className="text-zinc-300"/> Стикеры и эмодзи</div></button>
+                            </div>
+                        </div>
+                        )
+                    ) : (
+                        <AnimatePresence>
+                            {searchQuery ? searchResults.map(u => (
+                                <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} key={u.id} onClick={() => handleSearchResultClick(u)} className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
+                                    <ProfileAvatar prof={u} className="w-12 h-12" />
+                                    <div className="min-w-0"><div className="font-bold text-sm flex items-center gap-1 truncate">{getDisplayName(u) || u.title} {u.is_verified && <VerifiedBadge size={14}></VerifiedBadge>} <StatusBadge status={u.custom_status} color={u.custom_status_color} size={12}></StatusBadge></div><div className="text-xs text-blue-400 truncate">@{u.username || u.slug}</div></div>
+                                </motion.div>
+                            )) : rooms.map(r => (
+                                <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={r.id} onClick={() => setActiveRoom(r)} className={"flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors " + (activeRoom?.id === r.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 border border-transparent text-white/90')}>
+                                    <div className="relative flex-shrink-0">
+                                        {r.type === 'private' ? <ProfileAvatar prof={r.other_user} className="w-12 h-12" /> : <img src={r.avatar_url || DEFAULT_AVATAR} className="w-12 h-12 rounded-full object-cover" />}
+                                        {r.type === 'private' && formatLastSeenImproved(r.other_user?.last_seen) === 'online' && !r.other_user?.is_banned && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#050505]"></div>}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between">
+                                            <span className="font-bold text-sm flex items-center gap-1 truncate">
+                                                {r.type === 'channel' || r.type === 'group' ? r.title : getDisplayName(r.other_user)}
+                                                {(r.type === 'channel' || r.type === 'group') && r.is_verified && <VerifiedBadge size={12}></VerifiedBadge>}
+                                                {r.type === 'private' && r.other_user?.is_verified && <VerifiedBadge size={12}></VerifiedBadge>}
+                                                {r.type === 'private' && <StatusBadge status={r.other_user?.custom_status} color={r.other_user?.custom_status_color} size={12} className="ml-1"></StatusBadge>}
+                                            </span>
+                                            <span className={"text-[10px] flex-shrink-0 ml-2 " + (activeRoom?.id === r.id ? 'text-white/70' : 'text-zinc-500')}>{r.updated_at ? new Date(r.updated_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ""}</span>
+                                        </div>
+                                        <div className={"text-xs truncate " + (activeRoom?.id === r.id ? 'text-white/80' : 'text-zinc-500')}>{r.last_message_preview || (r.type === 'channel' ? "Канал создан" : "Нет сообщений")}</div>
+                                    </div>
+                                    {r.unread_count > 0 && <div className="bg-blue-600 text-white text-[10px] rounded-full px-2 py-0.5 font-bold shadow-lg shadow-blue-600/50 flex-shrink-0">{r.unread_count}</div>}
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
+                    )}
+                </div>
+            </div>
+        <div className={"flex-1 flex flex-col bg-[#0f0f0f] relative " + (!activeRoom ? 'hidden md:flex' : 'flex')}>
+         {isCalling && activeRoom && myProfile && (
+             <CallRoom 
+                roomName={activeRoom.id} 
+                userId={myProfile.id}
+                username={myProfile.display_name} 
+                onLeave={() => setIsCalling(false)} 
+             />
+         )}
+
+         {activeRoom ? (
+             <>
+                <div className="h-[72px] border-b border-white/5 flex items-center justify-between px-4 bg-black/40 backdrop-blur-xl z-10 relative">
+                    <div className="flex items-center gap-3 cursor-pointer group flex-1 min-w-0" onClick={()=>setShowRightSidebar(!showRightSidebar)}>
+                        <button onClick={(e)=>{e.stopPropagation(); setActiveRoom(null);}} className="md:hidden p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"><ChevronLeft></ChevronLeft></button>
+                        <div className="relative flex-shrink-0">
+                            {iAmBlocked ? <div className="w-11 h-11 bg-zinc-800 rounded-full flex items-center justify-center"><UserX size={20} className="text-zinc-600"></UserX></div> : 
+                             activeRoom.type === 'private' ? <ProfileAvatar prof={activeRoom.other_user} className="w-11 h-11 shadow-md group-hover:scale-105 transition-transform" /> : 
+                             <img src={activeRoom.avatar_url || DEFAULT_AVATAR} className="w-11 h-11 rounded-full object-cover group-hover:scale-105 transition-transform shadow-md"></img>}
+                        </div>
+                        <div className="min-w-0">
+                            <div className="font-bold text-sm flex items-center gap-1 truncate">
+                                {activeRoom.type==='channel' || activeRoom.type==='group' ? activeRoom.title : (iAmBlocked ? "Пользователь" : getDisplayName(activeRoom.other_user))} 
+                                {(activeRoom.type==='channel' || activeRoom.type==='group') && activeRoom.is_verified && <VerifiedBadge size={14}></VerifiedBadge>}
+                                {activeRoom.type==='private' && activeRoom.other_user?.is_verified && <VerifiedBadge size={14}></VerifiedBadge>}
+                                {activeRoom.type === 'private' && <StatusBadge status={activeRoom.other_user?.custom_status} color={activeRoom.other_user?.custom_status_color} size={14}></StatusBadge>}
+                            </div>
+                            <div className="text-xs text-blue-500 transition-colors group-hover:text-blue-400 truncate mt-0.5">
+                                {activeRoom.type==='channel' ? (activeRoom.slug ? '@'+activeRoom.slug : 'Private') + " • " + (activeRoom.subscribers_count || 1) + " subs" : activeRoom.type==='group' ? (activeRoom.subscribers_count || 1) + " members" : (iAmBlocked ? "был(а) недавно" : formatLastSeenImproved(activeRoom.other_user?.last_seen))}
+                            </div>
+                        </div>
+                    </div>
+                    {selectionMode ? (
+                        <div className="flex items-center gap-4 flex-shrink-0"><span className="text-sm font-bold bg-white/10 px-3 py-1 rounded-full">{selectedIds.size} выбрано</span><button onClick={()=>setSelectionMode(false)} className="text-zinc-400 hover:text-white transition-colors">Отмена</button><button onClick={handleBulkDelete} className="text-red-500 hover:text-red-400 font-bold transition-colors">Удалить</button></div>
+                    ) : (
+                        <div className="flex gap-4 text-zinc-400 items-center relative flex-shrink-0">
+                            <SearchIcon className="hover:text-white cursor-pointer transition-colors" size={20} onClick={()=>setIsChatSearchOpen(!isChatSearchOpen)}></SearchIcon>
+                            
+                            {(activeRoom.type === 'private' || activeRoom.type === 'group') && !iAmBlocked && (
+                                <>
+                                    <Phone onClick={() => startCall(false)} size={20} className="hover:text-white cursor-pointer transition-colors"></Phone>
+                                    <Video onClick={() => startCall(true)} size={20} className="hover:text-white cursor-pointer transition-colors"></Video>
+                                </>
+                            )}
+
+                            <MoreVertical className="hover:text-white cursor-pointer transition-colors" onClick={(e)=>toggleMenu(e, 'chat')}></MoreVertical>
+                            {activeMenu === 'chat' && (
+                                <div className="absolute top-10 right-0 w-56 premium-glass border border-white/10 py-2 z-50" style={{borderRadius: '16px'}} onClick={e=>e.stopPropagation()}>
+                                    <button onClick={toggleMute} className="w-full text-left px-4 py-3 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors">{activeRoom.is_muted ? <><Bell size={16}></Bell> Включить уведомления</> : <><BellOff size={16}></BellOff> Отключить уведомления</>}</button>
+                                    <button onClick={handleClearHistory} className="w-full text-left px-4 py-3 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Eraser size={16}></Eraser> Очистить историю</button>
+                                    <div className="h-[1px] bg-white/10 my-1"></div>
+                                    {activeRoom.type !== 'private' && activeRoom.owner_id === myProfile?.id ? (
+                                        <>
+                                            <button onClick={()=>{startEditChannel();}} className="w-full text-left px-4 py-3 hover:bg-white/10 flex items-center gap-3 text-sm transition-colors"><Edit2 size={16}></Edit2> Изменить {roomTypeNameText}</button>
+                                            <button onClick={()=>{setActiveMenu(null); setShowDeleteChatModal(true);}} className="w-full text-left px-4 py-3 hover:bg-red-500/20 text-red-400 flex items-center gap-3 text-sm transition-colors"><Trash2 size={16}></Trash2> Удалить {roomTypeNameText}</button>
+                                        </>
+                                    ) : activeRoom.type !== 'private' ? (
+                                        <button onClick={()=>leaveChannel(activeRoom)} className="w-full text-left px-4 py-3 hover:bg-red-500/20 text-red-400 flex items-center gap-3 text-sm transition-colors"><LeaveIcon size={16}></LeaveIcon> Покинуть {roomTypeNameText}</button>
+                                    ) : (
+                                        <button onClick={()=>{setActiveMenu(null); setShowDeleteChatModal(true);}} className="w-full text-left px-4 py-3 hover:bg-red-500/20 text-red-400 flex items-center gap-3 text-sm transition-colors"><Trash2 size={16}></Trash2> Удалить чат</button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <AnimatePresence>
+                    {isChatSearchOpen && (
+                        <motion.div initial={{height:0, opacity:0}} animate={{height:'auto', opacity:1}} exit={{height:0, opacity:0}} className="px-4 py-3 border-b border-white/5 bg-black/40 flex items-center gap-2 overflow-hidden backdrop-blur-md">
+                            <SearchIcon size={16} className="text-zinc-500"></SearchIcon>
+                            <input value={chatSearchQuery} onChange={e=>setChatSearchQuery(e.target.value)} placeholder="Поиск в чате..." className="bg-transparent text-sm w-full outline-none font-medium"></input>
+                            <button onClick={()=>{setIsChatSearchOpen(false); setChatSearchQuery("")}} className="text-zinc-500 hover:text-white transition-colors p-1 bg-white/5 rounded-full"><X size={16}></X></button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                    {pinnedMessage && (
+                        <motion.div initial={{y:-20, opacity:0}} animate={{y:0, opacity:1}} exit={{y:-20, opacity:0}} className="absolute top-[72px] left-0 right-0 z-20 premium-glass border-b border-t-0 border-r-0 border-l-0 border-white/10 px-4 py-3 flex items-center justify-between cursor-pointer shadow-lg" style={{borderRadius: '0 0 16px 16px'}} onClick={()=>handleScrollToPin()}>
+                            <div className="flex items-center gap-3 border-l-[3px] border-blue-500 pl-3 min-w-0"><div><div className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mb-0.5">Закрепленное сообщение</div><div className="text-xs text-zinc-200 truncate max-w-md font-medium">{pinnedMessage.text || (pinnedMessage.file ? "📎 Вложение" : "...")}</div></div></div>
+                            <button onClick={(e)=>{e.stopPropagation(); handleUnpin()}} className="p-1.5 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"><X size={14} className="text-zinc-400"></X></button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-1 bg-[url('https://transparenttextures.com/patterns/stardust.png')] custom-scrollbar pt-4 relative">
+                    <div className="absolute inset-0 bg-blue-900/5 blur-[120px] pointer-events-none rounded-full w-full h-full"></div>
+                    {pinnedMessage && <div className="h-12"></div>}
+                    {renderMessages()}
+                    <div ref={msgEndRef}></div>
+                </div>
+
+                {isBlocked ? (
+                    <div className="p-6 bg-[#050505] flex justify-center border-t border-white/5 z-20">
+                        <button onClick={toggleBlock} className="w-full max-w-sm py-3.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold transition-colors shadow-lg">Разблокировать</button>
+                    </div>
+                ) : (activeRoom.type === 'channel' && activeRoom.owner_id !== myProfile.id && !activeRoom.is_member) ? (
+                    <div className="p-6 bg-[#050505] flex justify-center border-t border-white/5 z-20">
+                        <button onClick={()=>joinChannel(activeRoom)} className="w-full max-w-sm py-3.5 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-colors shadow-lg shadow-blue-600/20">Подписаться</button>
+                    </div>
+                ) : (activeRoom.type === 'channel' && activeRoom.owner_id !== myProfile.id) ? (
+                    <div className="p-4 bg-[#050505] flex justify-center border-t border-white/5 text-zinc-500 text-sm gap-2 z-20">
+                        {activeRoom.is_muted ? <BellOff size={16}></BellOff> : <Bell size={16}></Bell>}
+                        <button onClick={toggleMute} className="hover:text-white transition-colors font-bold">{activeRoom.is_muted ? "Включить уведомления" : "Отключить уведомления"}</button>
+                    </div>
+                ) : ( 
+                    <>
+                        <AnimatePresence>
+                            {(replyTo || editingMessage) && (
+                                <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:10}} className="px-4 pt-3 bg-[#050505] border-t border-white/5 z-20">
+                                    <div className="flex items-center justify-between bg-zinc-900/80 p-3 rounded-xl border-l-[3px] border-blue-600 shadow-inner">
+                                        <div className="text-sm pl-2 min-w-0"><div className="text-blue-500 font-bold text-[10px] uppercase tracking-wider mb-0.5">{editingMessage ? "Редактирование" : `В ответ...`}</div><div className="text-zinc-300 truncate max-w-xs text-xs font-medium">{editingMessage ? (editingMessage.decoded?.text || "Вложение") : (replyTo?.decoded?.text || "Вложение")}</div></div>
+                                        <button onClick={()=>{setReplyTo(null); setEditingMessage(null); setInputText("");}} className="p-1.5 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"><X size={14}></X></button>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                        <div className="p-4 bg-[#212121] relative z-20 border-t border-white/5">
+                            {showEmojiPicker && (
+                                <div className="absolute bottom-20 right-4 w-80 h-96 z-50 premium-glass overflow-hidden shadow-2xl border border-white/10" onClick={e=>e.stopPropagation()}>
+                                    <EmojiPicker theme={Theme.DARK} emojiStyle={EmojiStyle.APPLE} onEmojiClick={handleEmojiClick} width="100%" height="100%"/>
+                                </div>
+                            )}
+                            {filePreviews.length > 0 && (
+                                <div className="flex gap-2 mb-3 overflow-x-auto pb-2 custom-scrollbar">
+                                    {filePreviews.map((src, i) => (
+                                        <div key={i} className="relative flex-shrink-0 w-16 h-16 bg-zinc-900 rounded-xl overflow-hidden border border-white/10 group shadow-md">
+                                            {src ? <img src={src} className="w-full h-full object-cover"></img> : <div className="w-full h-full flex items-center justify-center bg-white/5"><FileIcon size={20}></FileIcon></div>}
+                                            <button onClick={()=>removeFile(i)} className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-500 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={10}></X></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {isRecording ? (
+                                <div className="bg-zinc-900 border border-white/5 rounded-3xl p-2 flex items-center gap-3 shadow-lg">
+                                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse ml-4 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+                                    <div className="flex-1 text-sm text-zinc-300 font-mono font-medium">{formatDuration(recordingTime)}</div>
+                                    <button onClick={cancelRecording} className="text-zinc-400 hover:text-white px-4 text-sm font-bold transition-colors">Отмена</button>
+                                    <button onClick={stopRecording} className="p-3 bg-blue-600 rounded-full text-white shadow-lg shadow-[#2563eb]/30 hover:scale-105 transition-transform"><Send size={18} className="ml-0.5"></Send></button>
+                                </div>
+                            ) : (
+                                <div className="bg-[#212121] rounded-3xl p-1.5 flex items-center gap-2 shadow-lg transition-all">
+                                    <div className="flex items-center">
+                                        <div onClick={()=>chatFileInputRef.current?.click()} className="p-3.5 text-zinc-400 hover:text-white cursor-pointer transition-colors hover:bg-white/5 rounded-full"><Paperclip className="w-5 h-5"></Paperclip></div>
+                                        <input type="file" multiple ref={chatFileInputRef} onChange={handleFileSelect} className="hidden"></input>
+                                    </div>
+                                    <textarea value={inputText} onChange={e=>setInputText(e.target.value)} onPaste={onPaste} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder={editingMessage ? "Редактировать..." : (activeRoom.type==='channel' ? "Опубликовать..." : "Сообщение...")} style={{fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"'}} className="flex-1 bg-transparent border-none outline-none text-[15px] text-white min-h-[24px] max-h-32 py-2 resize-none custom-scrollbar leading-relaxed"></textarea>
+                                    <div className="flex items-center gap-1 pr-1">
+                                        <button onClick={(e)=>{e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker)}} className="p-3 text-zinc-400 hover:text-white cursor-pointer transition-colors hover:bg-white/5 rounded-full"><Smile className="w-5 h-5"></Smile></button>
+                                        {(inputText || selectedFiles.length > 0) ? (
+                                            <button onClick={()=>sendMessage(false)} className="p-3.5 bg-blue-600 rounded-full text-white shadow-lg shadow-[#2563eb]/30 hover:scale-105 transition-transform">
+                                                {editingMessage ? (<Check size={20} className="ml-0.5"></Check>) : (<Send className="w-5 h-5 ml-0.5"></Send>)}
+                                            </button>
+                                        ) : (
+                                            <button onClick={startRecording} className="p-3.5 rounded-full text-white shadow-lg transition-transform hover:scale-105 bg-zinc-700 hover:bg-zinc-600"><Mic size={20}></Mic></button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </>
+                )}
+             </>
+         ) : (
+             <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 relative">
+                 <div className="absolute inset-0 bg-blue-900/5 blur-[120px] pointer-events-none rounded-full w-[500px] h-[500px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+                 <div className="w-24 h-24 premium-glass flex items-center justify-center mb-6 shadow-2xl animate-float"><LogoIcon className="w-12 h-12 text-blue-500"></LogoIcon></div>
+                 <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Добро пожаловать в UDMURTGRAM</h2>
+                 <p className="text-sm font-medium">Выберите чат из списка или создайте новый</p>
+             </div>
+         )}
+
+         {/* --- МОДАЛКА ВХОДЯЩЕГО ЗВОНКА --- */}
+         <AnimatePresence>
+            {incomingCall && (
+                <motion.div initial={{opacity:0, scale: 0.9}} animate={{opacity:1, scale: 1}} exit={{opacity:0, scale: 0.9}} className="fixed inset-0 z-[500] bg-[#050a15]/95 backdrop-blur-xl flex flex-col items-center justify-center">
+                    <div className="absolute inset-0 bg-blue-900/20 blur-[150px] rounded-full w-[600px] h-[600px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+                    <div className="relative z-10 flex flex-col items-center">
+                        <div className="w-40 h-40 rounded-full overflow-hidden mb-8 shadow-[0_0_50px_rgba(59,130,246,0.3)] animate-pulse border-4 border-white/10">
+                            <ProfileAvatar prof={incomingCall.caller} className="w-full h-full" />
+                        </div>
+                        <h2 className="text-4xl text-white font-black tracking-tight mb-2">{getDisplayName(incomingCall.caller)}</h2>
+                        <p className="text-blue-400 font-mono tracking-widest uppercase text-sm mb-16 animate-pulse">Входящий вызов...</p>
+                        <div className="flex gap-12">
+                            <button onClick={() => setIncomingCall(null)} className="w-20 h-20 bg-red-500 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-[0_0_30px_rgba(239,68,68,0.5)] transition-all">
+                                <Phone className="text-white rotate-[135deg]" size={32}></Phone>
+                            </button>
+                            <button onClick={() => { setActiveRoom(incomingCall.room); setIsCalling(true); setIncomingCall(null); }} className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-[0_0_30px_rgba(34,197,94,0.5)] transition-all animate-bounce">
+                                <Phone className="text-white" size={32}></Phone>
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+      </div>
+
+      <AnimatePresence>
+        {showRightSidebar && activeRoom && (
+            <motion.div initial={{width:0, opacity:0}} animate={{width:320, opacity:1}} exit={{width:0, opacity:0}} className="border-l border-white/10 bg-[#212121] flex flex-col z-20">
+                <div className="h-[72px] flex-shrink-0 border-b border-white/5 flex items-center px-4 font-bold bg-[#212121] justify-between">
+                    {isEditingContactRight ? (
+                        <div className="flex items-center gap-3">
+                            <button onClick={()=>setIsEditingContactRight(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><ChevronLeft size={18}></ChevronLeft></button>
+                            <span>Изменить</span>
+                        </div>
+                    ) : (
+                        <span>Информация</span>
+                    )}
+                    <div className="flex items-center gap-2">
+                        {!isEditingContactRight && activeRoom.type === 'private' && (
+                            <button onClick={() => {
+                                const prof = activeRoom.other_user;
+                                if (!prof) return;
+                                const existing = contacts.find(c => c.contact_id === prof.id);
+                                if (existing && existing.custom_name) {
+                                    const parts = existing.custom_name.split(" ");
+                                    setContactFirstName(parts[0] || "");
+                                    setContactLastName(parts.slice(1).join(" ") || "");
+                                } else {
+                                    setContactFirstName(prof.display_name || "");
+                                    setContactLastName("");
+                                }
+                                setContactNote(existing?.note || "");
+                                setShowContactModal(prof);
+                                setIsEditingContactRight(true);
+                            }} className="p-2 hover:bg-white/10 rounded-full transition-colors"><Edit2 size={18}></Edit2></button>
+                        )}
+                        <button onClick={()=>{ setShowRightSidebar(false); setIsEditingContactRight(false); }} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={18}></X></button>
+                    </div>
+                </div>
+                <div className="p-0 flex flex-col items-center overflow-y-auto custom-scrollbar flex-1">
+                    {isEditingChannel ? (
+                        <div className="w-full space-y-4 p-6">
+                            <div className="flex justify-center mb-4"><div onClick={()=>fileInputRef.current?.click()} className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center overflow-hidden cursor-pointer border border-white/10 hover:border-blue-500 transition-colors shadow-lg">{formAvatarPreview || activeRoom.avatar_url ? <img src={formAvatarPreview || activeRoom.avatar_url} className="w-full h-full object-cover"></img> : <Camera></Camera>}</div></div>
+                            <input value={channelData.title} onChange={e=>setChannelData({...channelData, title:e.target.value})} placeholder="Название" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"></input>
+                            <textarea value={channelData.desc} onChange={e=>setChannelData({...channelData, desc:e.target.value})} placeholder="Описание" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 h-24 resize-none outline-none focus:border-blue-500 transition-colors"></textarea>
+                            <div className="flex gap-2 mb-2">
+                                <button onClick={()=>setChannelData({...channelData, type:'public'})} className={"flex-1 p-2.5 rounded-xl border font-bold text-sm transition-colors " + (channelData.type==='public'?'border-blue-500 bg-blue-500/20 text-blue-400':'border-white/10 hover:bg-white/5')}>Pub</button>
+                                <button onClick={()=>setChannelData({...channelData, type:'private'})} className={"flex-1 p-2.5 rounded-xl border font-bold text-sm transition-colors " + (channelData.type==='private'?'border-blue-500 bg-blue-500/20 text-blue-400':'border-white/10 hover:bg-white/5')}>Priv</button>
+                            </div>
+                            {channelData.type === 'public' && <input value={channelData.slug} onChange={e=>setChannelData({...channelData, slug:e.target.value})} placeholder="Slug (t.me/...)" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors"></input>}
+                            <button onClick={handleUpdateChannel} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold transition-colors shadow-lg shadow-blue-600/20">Сохранить</button>
+                            <button onClick={()=>setIsEditingChannel(false)} className="w-full text-zinc-500 hover:text-white py-2 transition-colors font-bold text-sm">Отмена</button>
+                        </div>
+                    ) : isEditingContactRight && activeRoom.type === 'private' ? (
+                        <div className="w-full space-y-4 p-6">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-[18px] font-medium text-white">Изменить</h3>
+                            </div>
+                            <div className="flex justify-center mb-4">
+                                <div onClick={()=>fileInputRef.current?.click()} className="w-24 h-24 rounded-full overflow-hidden mb-2 relative cursor-pointer shadow-2xl border border-white/10 group">
+                                    {formAvatarPreview || activeRoom.other_user?.avatar_url ? <img src={formAvatarPreview || activeRoom.other_user?.avatar_url} className="w-full h-full object-cover"></img> : <Camera></Camera>}
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={24}></Camera></div>
+                                </div>
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarFileSelect} className="hidden"></input>
+                            </div>
+                            <input value={contactFirstName} onChange={e=>setContactFirstName(e.target.value)} placeholder="Имя" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white"></input>
+                            <input value={contactLastName} onChange={e=>setContactLastName(e.target.value)} placeholder="Фамилия" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500 transition-colors text-white"></input>
+                            <div>
+                                <textarea value={contactNote} onChange={e=>setContactNote(e.target.value.slice(0,128))} maxLength={128} placeholder="Заметка" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 h-24 resize-none outline-none focus:border-blue-500 transition-colors text-white"></textarea>
+                                <div className="flex justify-between mt-2 text-xs text-zinc-500"><div>Заметку видите только Вы.</div><div>{contactNote.length}/128</div></div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleSaveContact} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Сохранить</button>
+                                <button onClick={()=>setIsEditingContactRight(false)} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-zinc-200">Отмена</button>
+                            </div>
+                            <button onClick={handleDeleteContact} className="w-full mt-2 text-red-500 font-bold flex items-center justify-center gap-2 py-3"><Trash2 size={16}></Trash2> Удалить контакт</button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="w-full pt-8 pb-4 flex flex-col items-center bg-gradient-to-b from-[#1a1a1a] to-[#111111]">
+                                <div className="w-28 h-28 rounded-full overflow-hidden mb-4 relative cursor-pointer shadow-2xl" onClick={()=>setLightboxSrc({url: (activeRoom.type!=='private' ? activeRoom.avatar_url : activeRoom.other_user!.avatar_url) || DEFAULT_AVATAR, type: 'image'})}>
+                                    {activeRoom.type==='private' && iAmBlocked ? <UserX className="w-full h-full p-8 text-zinc-600 bg-zinc-900"></UserX> : 
+                                     activeRoom.type === 'private' ? <ProfileAvatar prof={activeRoom.other_user} className="w-full h-full hover:scale-105 transition-transform" /> :
+                                     <img src={activeRoom.avatar_url || DEFAULT_AVATAR} className="w-full h-full object-cover hover:scale-105 transition-transform"></img>}
+                                </div>
+                                <h2 className="text-xl font-bold text-center flex items-center justify-center gap-1 tracking-tight px-4">
+                                    <span className="truncate">{activeRoom.type!=='private' ? activeRoom.title : (iAmBlocked ? "Пользователь" : getDisplayName(activeRoom.other_user))}</span>
+                                    {(activeRoom.type==='channel' || activeRoom.type==='group') && activeRoom.is_verified && <VerifiedBadge size={16}></VerifiedBadge>}
+                                    {activeRoom.type==='private' && activeRoom.other_user?.is_verified && <VerifiedBadge size={16}></VerifiedBadge>}
+                                    {activeRoom.type === 'private' && <StatusBadge status={activeRoom.other_user?.custom_status} color={activeRoom.other_user?.custom_status_color} size={18} className="ml-1 flex-shrink-0"></StatusBadge>}
+                                </h2>
+                                <p className="text-zinc-400 text-sm mb-4">{activeRoom.type==='channel' ? (activeRoom.slug ? '@'+activeRoom.slug : 'Private Channel') : activeRoom.type==='group' ? 'Group' : (iAmBlocked ? 'был(а) недавно' : formatLastSeenImproved(activeRoom.other_user?.last_seen))}</p>
+                                
+                                {activeRoom.type === 'private' && !iAmBlocked && !activeRoom.other_user?.is_banned && (
+                                    <div className="flex justify-center gap-2 w-full px-6 mb-2">
+                                        <button className="flex-1 bg-zinc-900/80 hover:bg-zinc-800 py-3 rounded-xl flex flex-col items-center gap-1.5 transition-colors border border-white/5"><MessageSquare size={20}></MessageSquare><span className="text-[11px] font-medium">Чат</span></button>
+                                        <button onClick={toggleMute} className={"flex-1 py-3 rounded-xl flex flex-col items-center gap-1.5 transition-colors border border-white/5 " + (activeRoom.is_muted ? "bg-blue-600/20 text-blue-400" : "bg-zinc-900/80 hover:bg-zinc-800")}><Bell size={20}></Bell><span className="text-[11px] font-medium">Звук</span></button>
+                                        <button onClick={()=>openContactModal(activeRoom.other_user!)} className={"flex-1 py-3 rounded-xl flex flex-col items-center gap-1.5 transition-colors border border-white/5 " + (contacts.find(c=>c.contact_id===activeRoom.other_user?.id) ? "bg-green-500/20 text-green-500" : "bg-zinc-900/80 hover:bg-zinc-800")}><UserPlus size={20}></UserPlus><span className="text-[11px] font-medium">Контакт</span></button>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {activeRoom.type !== 'private' ? (
+                                <div className="w-full space-y-4 p-6 bg-[#0a0a0f] flex-1">
+                                    {activeRoom.type === 'channel' && <div className="bg-white/5 border border-white/5 p-4 rounded-2xl"><label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Описание</label><p className="text-sm mt-1 leading-relaxed">{activeRoom.description || "Нет описания"}</p></div>}
+                                    {activeRoom.invite_link && <div className="bg-white/5 border border-white/5 p-4 rounded-2xl"><label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Ссылка-приглашение</label><div className="flex justify-between items-center mt-1"><span className="text-sm text-blue-400 truncate bg-blue-500/10 px-2 py-1 rounded-md font-mono">{activeRoom.invite_link}</span><button onClick={()=>navigator.clipboard.writeText(activeRoom.invite_link!)} className="p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"><Copy size={14}></Copy></button></div></div>}
+                                    
+                                    {activeRoom.type === 'group' && (
+                                        <div className="mt-4">
+                                            <h3 className="text-[10px] text-zinc-500 font-bold uppercase mb-2 tracking-widest pl-1">Участники ({groupMembers.length})</h3>
+                                            <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                                {groupMembers.map(m => (
+                                                    <div key={m.id} className="flex items-center gap-3 p-2 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setShowProfileModal(m)}>
+                                                        <ProfileAvatar prof={m} className="w-9 h-9" />
+                                                        <div className="text-xs flex-1 min-w-0">
+                                                            <div className="font-bold flex items-center gap-1 truncate">{getDisplayName(m)} {m.is_verified && <VerifiedBadge size={12}></VerifiedBadge>} <StatusBadge status={m.custom_status} color={m.custom_status_color} size={12}></StatusBadge></div>
+                                                            <div className="text-zinc-500 truncate">{formatLastSeenImproved(m.last_seen)}</div>
+                                                        </div>
+                                                        {activeRoom.owner_id === myProfile?.id && m.id !== myProfile?.id && (
+                                                            <button onClick={async (e)=>{ e.stopPropagation(); await supabase.from('room_members').delete().eq('room_id', activeRoom.id).eq('user_id', m.id); await insertSystemMessage(activeRoom.id, `${getDisplayName(myProfile!)} исключил ${getDisplayName(m)}`); setGroupMembers(p=>p.filter(x=>x.id!==m.id));}} className="text-red-500 p-2 hover:bg-red-500/20 rounded-lg transition-colors"><X size={14}></X></button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {activeRoom.owner_id === myProfile?.id && <button onClick={()=>setShowAddMemberModal(true)} className="w-full mt-3 py-3 bg-white/5 hover:bg-white/10 text-xs rounded-xl flex items-center justify-center gap-2 font-bold transition-colors"><UserPlus size={14}></UserPlus> Добавить участника</button>}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-6">
+                                        <h3 className="text-[10px] text-zinc-500 font-bold uppercase mb-2 tracking-widest pl-1">Медиа контент</h3>
+                                        <div className="flex gap-2">
+                                            <div className="bg-white/5 border border-white/5 p-2 rounded-xl flex-1 text-center text-xs font-bold text-zinc-400 cursor-pointer hover:bg-white/10 hover:text-white transition-colors py-3">Медиа</div>
+                                            <div className="bg-white/5 border border-white/5 p-2 rounded-xl flex-1 text-center text-xs font-bold text-zinc-400 cursor-pointer hover:bg-white/10 hover:text-white transition-colors py-3">Файлы</div>
+                                            <div className="bg-white/5 border border-white/5 p-2 rounded-xl flex-1 text-center text-xs font-bold text-zinc-400 cursor-pointer hover:bg-white/10 hover:text-white transition-colors py-3">Ссылки</div>
+                                        </div>
+                                    </div>
+                                    {activeRoom.owner_id === myProfile?.id && (
+                                        <button onClick={startEditChannel} className="w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold mt-6 transition-colors">Изменить {roomTypeNameText}</button>
+                                    )}
+                                </div>
+                            ) : (
+                                !iAmBlocked && !activeRoom.other_user?.is_banned && (
+                                    <div className="w-full space-y-4 p-6 bg-[#0a0a0f] flex-1">
+                                        <div className="space-y-4">
+                                            {/* Phone */}
+                                            {activeRoom.other_user?.phone && (
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-zinc-300"><Phone size={16}></Phone></div>
+                                                    <div className="min-w-0">
+                                                        <div className="text-white text-sm font-medium truncate">{(activeRoom.other_user as any).phone}</div>
+                                                        <div className="text-xs text-zinc-500 mt-1">Телефон</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Username */}
+                                            <div className="flex items-start gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-zinc-300">@</div>
+                                                <div className="min-w-0">
+                                                    <div className="text-green-500 text-sm font-medium truncate">@{activeRoom.other_user?.username}</div>
+                                                    <div className="text-xs text-zinc-500 mt-1">Имя пользователя</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Birthday */}
+                                            {activeRoom.other_user?.dob && (
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-zinc-300"><Gift size={16} className="text-zinc-400"></Gift></div>
+                                                    <div className="min-w-0">
+                                                        <div className="text-white text-sm font-medium">{formatDob(activeRoom.other_user?.dob)}</div>
+                                                        <div className="text-xs text-zinc-500 mt-1">День рождения</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Notifications */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-zinc-300"><Bell size={16}></Bell></div>
+                                                    <div>
+                                                        <div className="text-white text-sm font-medium">Уведомления</div>
+                                                    </div>
+                                                </div>
+                                                <button onClick={()=>setContactNotificationsEnabled(p=>!p)} className={"w-12 h-6 rounded-full p-0.5 transition-colors " + (contactNotificationsEnabled ? 'bg-blue-600' : 'bg-white/10') }>
+                                                    <div className={"w-5 h-5 bg-white rounded-full shadow transform transition-transform " + (contactNotificationsEnabled ? 'translate-x-6' : 'translate-x-0')}></div>
+                                                </button>
+                                            </div>
+
+                                            {/* Favorites */}
+                                            <div className="flex items-start gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-zinc-300"><BookOpen size={16}></BookOpen></div>
+                                                <div>
+                                                    <div className="text-white text-sm font-medium">Избранное</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Note */}
+                                            <div>
+                                                <h3 className="text-[10px] text-zinc-500 font-bold uppercase mb-2 tracking-widest pl-1">Заметка</h3>
+                                                <div className="bg-white/5 border border-white/5 p-3 rounded-2xl text-sm text-zinc-300">
+                                                    {contactNote ? contactNote : <span className="text-zinc-500">Нет заметок</span>}
+                                                </div>
+                                                <div className="flex justify-between mt-2 text-xs text-zinc-500"><div>Заметка видна только вам</div></div>
+                                            </div>
+                                        </div>
+
+                                        {/* Tabs */}
+                                        <div className="mt-4">
+                                            <div className="flex gap-6 px-1 border-b border-white/5 pb-2">
+                                                <button className="text-sm text-purple-400 font-medium border-b-2 border-purple-500 pb-2">Публикации</button>
+                                                <button className="text-sm text-zinc-400">Подарки</button>
+                                                <button className="text-sm text-zinc-400">Медиа</button>
+                                                <button className="text-sm text-zinc-400">Файлы</button>
+                                            </div>
+
+                                            {/* Media gallery grid */}
+                                            <div className="mt-3 grid grid-cols-3 gap-2">
+                                                {mediaItems.slice(0, 12).map(mi => (
+                                                    <button key={mi.id} onClick={() => setLightboxSrc({ url: mi.decoded!.file!.url, type: mi.decoded!.file!.type as "image" | "video" })} className="w-full p-0">
+
+                                                        <div className="w-full h-28 bg-black rounded overflow-hidden">
+                                                            {mi.decoded!.file!.type === 'image' ? (
+                                                                <img src={mi.decoded!.file!.url} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full relative bg-black">
+                                                                    <video src={mi.decoded!.file!.url} className="w-full h-full object-cover" />
+                                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Play size={24} className="text-white" /></div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                                {mediaItems.length === 0 && <div className="text-zinc-500 text-sm col-span-3">Нет медиа в чате</div>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            )}
+
+                            {activeRoom.type==='private' && (
+                                <div className="w-full mt-auto p-6 bg-[#0a0a0f] border-t border-white/5">
+                                    <button onClick={toggleBlock} className={"w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors " + (isBlocked ? 'bg-zinc-800 text-white hover:bg-zinc-700' : 'bg-red-500/10 text-red-500 hover:bg-red-500/20')}>
+                                        {isBlocked ? "Разблокировать пользователя" : "Заблокировать пользователя"}
+                                    </button>
+                                </div>
+                            )}
+                            {activeRoom.type!=='private' && activeRoom.is_member && activeRoom.owner_id !== myProfile?.id && (
+                                 <div className="w-full mt-auto p-6 bg-[#0a0a0f] border-t border-white/5">
+                                    <button onClick={()=>leaveChannel(activeRoom)} className="w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                                        <LeaveIcon size={18}></LeaveIcon> Покинуть {roomTypeNameText}
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ImageCropperModal
+        imageSrc={cropperImageSrc}
+        isOpen={showImageCropper}
+        onClose={() => {
+          setShowImageCropper(false);
+          if (cropperImageSrc) {
+            URL.revokeObjectURL(cropperImageSrc);
+            setCropperImageSrc("");
+          }
+        }}
+        onCropComplete={handleCropComplete}
+      />
+        </div>
+  );
+}
